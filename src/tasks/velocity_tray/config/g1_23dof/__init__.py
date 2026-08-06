@@ -9,7 +9,7 @@ from .env_cfgs import (
 from .rl_cfg import unitree_g1_23dof_ppo_runner_cfg
 
 register_mjlab_task(
-  task_id="Unitree-G1-23Dof-Rough",
+  task_id="Unitree-G1-23Dof-Rough-Tray",
   env_cfg=unitree_g1_23dof_rough_env_cfg(),
   play_env_cfg=unitree_g1_23dof_rough_env_cfg(play=True),
   rl_cfg=unitree_g1_23dof_ppo_runner_cfg(),
@@ -17,7 +17,7 @@ register_mjlab_task(
 )
 
 register_mjlab_task(
-  task_id="Unitree-G1-23Dof-Flat",
+  task_id="Unitree-G1-23Dof-Flat-Tray",
   env_cfg=unitree_g1_23dof_flat_env_cfg(),
   play_env_cfg=unitree_g1_23dof_flat_env_cfg(play=True),
   rl_cfg=unitree_g1_23dof_ppo_runner_cfg(),
@@ -25,7 +25,7 @@ register_mjlab_task(
 )
 
 register_mjlab_task(
-  task_id="Unitree-G1-23Dof-Arms-Up",
+  task_id="Unitree-G1-23Dof-Arms-Up-Tray",
   env_cfg=unitree_g1_23dof_arms_up_env_cfg(),
   play_env_cfg=unitree_g1_23dof_arms_up_env_cfg(play=True),
   rl_cfg=unitree_g1_23dof_ppo_runner_cfg(),
