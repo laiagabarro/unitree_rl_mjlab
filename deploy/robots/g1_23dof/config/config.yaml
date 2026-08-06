@@ -1,0 +1,141 @@
+all_transitions: &all_transitions
+  Passive: LT + B.on_pressed | key_z.on_pressed
+  FixStand: LT + up.on_pressed | key_x.on_pressed
+  Velocity: RT + A.on_pressed | key_v.on_pressed
+  VelocityPID: RT + A.on_pressed | key_b.on_pressed
+  VelocityArmsUp: RT + A.on_pressed | key_f.on_pressed
+  VelocityArmsUpPID: RT + A.on_pressed | key_g.on_pressed
+  PoseTracking_step_400: RT + B.on_pressed | key_1.on_pressed
+  PoseTracking_step_500: RT + Y.on_pressed | key_2.on_pressed
+  Mimic_Dance1_subject2: RB + A.on_pressed | key_d.on_pressed
+
+FSM:
+  enable_keyboard: true
+  _: # enabled fsms
+    Passive:
+      id: 1
+    FixStand:
+      id: 2
+    Velocity:
+      id: 3
+      type: RLBase
+    VelocityPID:
+      id: 4
+      type: PosePID
+    VelocityArmsUp:
+      id: 5
+      type: RLBase
+    VelocityArmsUpPID:
+      id: 6
+      type: PosePID
+    Mimic_Dance1_subject2:
+      id: 101
+      type: Mimic
+    PoseTracking_step_400:
+      id: 201
+      type: PoseTracking
+    PoseTracking_step_500:
+      id: 202
+      type: PoseTracking
+
+  Passive:
+    transitions: *all_transitions
+    mode: [
+      1,1,1,1,1,1,
+      1,1,1,1,1,1,
+      1,1,1,
+      1,1,1,1,1,1,1,
+      1,1,1,1,1,1,1,
+    ]
+    kd: [
+      3,3,3,3,3,3,
+      3,3,3,3,3,3,
+      3,3,3,
+      3,3,3,3,3,3,3,  
+      3,3,3,3,3,3,3,  
+    ]
+  FixStand:
+    transitions: *all_transitions
+    kp: [
+      100., 100., 100., 150., 40., 40.,
+      100., 100., 100., 150., 40., 40.,
+      200,200,200,
+      40,40,40,40,40,40,40,
+      40,40,40,40,40,40,40,
+    ]
+    kd: [
+      2,2,2,4,2,2,
+      2,2,2,4,2,2,
+      5,5,5,
+      10,10,10,10,10,10,10,
+      10,10,10,10,10,10,10,
+    ]
+    ts: [0, 3]
+    qs: [
+      [],
+      [ -0.1, 0,0,0.3,-0.2,0,
+        -0.1, 0,0,0.3,-0.2,0,
+        0,0,0,
+        0.35, 0.18,0,0.87,0,0,0,
+        0.35,-0.18,0,0.87,0,0,0
+      ]
+    ]
+
+  Velocity:
+    transitions: *all_transitions
+    policy_dir: config/policy/velocity/v0
+
+  VelocityPID:
+    transitions: *all_transitions
+    policy_dir: config/policy/velocity/v0
+    goal_pose_topic: rt/goal_pose
+    pid_gains:
+      kp_x: 1.0
+      kp_y: 1.0
+      kp_yaw: 10.0
+    velocity_limits:
+      max_vel_x: 0.5
+      min_vel_x: -1.0
+      max_vel_y: 0.5
+      min_vel_y: -0.5
+      max_vel_yaw: 1.0
+      min_vel_yaw: -1.0
+
+  VelocityArmsUp:
+    transitions: *all_transitions
+    policy_dir: config/policy/velocity/arms_up
+
+  VelocityArmsUpPID:
+    transitions: *all_transitions
+    policy_dir: config/policy/velocity/arms_up
+    goal_pose_topic: rt/goal_pose
+    pid_gains:
+      kp_x: 1.0
+      kp_y: 1.0
+      kp_yaw: 10.0
+    velocity_limits:
+      max_vel_x: 0.5
+      min_vel_x: -1.0
+      max_vel_y: 0.5
+      min_vel_y: -0.5
+      max_vel_yaw: 1.0
+      min_vel_yaw: -1.0
+
+  PoseTracking_step_400:
+    transitions: *all_transitions
+    policy_dir: config/policy/pose_tracking/2026-04-22_16-51-34_step_400
+    goal_pose_topic: rt/goal_pose
+    # debug_print: true
+
+  PoseTracking_step_500:
+    transitions: *all_transitions
+    policy_dir: config/policy/pose_tracking/2026-04-22_16-51-34_step_500
+    goal_pose_topic: rt/goal_pose
+    # debug_print: true
+
+  Mimic_Dance1_subject2:
+    transitions: *all_transitions
+    motion_file: config/policy/mimic/dance1_subject2/params/dance1_subject2.npz
+    policy_dir: config/policy/mimic/dance1_subject2/
+    time_start: 0.0
+    time_end: 500.0
