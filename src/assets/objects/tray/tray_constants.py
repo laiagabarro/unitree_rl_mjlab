@@ -29,6 +29,9 @@ def get_spec() -> mujoco.MjSpec:
 
 def get_tray_cfg() -> EntityCfg:
   return EntityCfg(
-    init_state=EntityCfg.InitialStateCfg(pos=(0.0, 0.0, 1.0)),
+    init_state=EntityCfg.InitialStateCfg(
+      pos=(0.32, 0.18, 0.98),
+      quat=(1.0, 0.0, 0.0, 0.0),
+    ),
     spec_fn=get_spec,
   )

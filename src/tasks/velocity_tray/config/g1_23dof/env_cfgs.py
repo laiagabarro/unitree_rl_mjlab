@@ -239,7 +239,11 @@ def unitree_g1_23dof_arms_up_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg
   # Override the robot entity with the new default arm positions.
   robot_cfg = get_g1_23dof_robot_cfg()
   robot_cfg = replace(robot_cfg, init_state=vla_init_state)
-  cfg.scene.entities = {"robot": robot_cfg}
+  tray_cfg = get_tray_cfg()
+  cfg.scene.entities = {
+    "robot": robot_cfg,
+    "tray": tray_cfg,
+  }
 
   # Tighten arm pose reward stds so the policy learns to hold the VLA position.
   for std_key in ("std_walking", "std_running"):
