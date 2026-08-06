@@ -1,0 +1,24 @@
+<mujoco model="food_tray">
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+
+  <asset>
+    <mesh name="food_tray" file="food_tray.stl"/>
+    <material name="tray_mat" rgba="0.8 0.7 0.55 1"/>
+  </asset>
+
+  <worldbody>
+    <body name="tray" pos="0 0 0">
+      <freejoint/>
+      <geom
+        name="tray_geom"
+        type="mesh"
+        mesh="food_tray"
+        material="tray_mat"
+        contype="1"
+        conaffinity="1"
+      />
+      <site name="tray_center" pos="0 0 0.02" size="0.02" rgba="0 1 0 0.6"/>
+      <inertial pos="0 0 0" mass="0.4" diaginertia="0.001 0.001 0.001"/>
+    </body>
+  </worldbody>
+</mujoco>
