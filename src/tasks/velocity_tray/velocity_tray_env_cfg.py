@@ -206,6 +206,16 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
       },
     ),
+    "reset_tray": EventTermCfg(
+      func=mdp.reset_tray_at_hands,
+      mode="reset",
+      params={
+        "robot_cfg": SceneEntityCfg("robot"),
+        "tray_name": "tray",
+        "site_names": ("left_palm", "right_palm"),
+        "z_offset": 0.02,
+      },
+    ),
     "push_robot": EventTermCfg(
       func=mdp.push_by_setting_velocity,
       mode="interval",
