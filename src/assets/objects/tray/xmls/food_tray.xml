@@ -2,7 +2,7 @@
   <compiler angle="radian" meshdir="assets" autolimits="true"/>
 
   <asset>
-    <mesh name="food_tray" file="food_tray.stl"/>
+    <mesh name="food_tray" file="food_tray.stl" scale="0.01 0.01 0.01"/>
     <material name="tray_mat" rgba="0.8 0.7 0.55 1"/>
   </asset>
 
