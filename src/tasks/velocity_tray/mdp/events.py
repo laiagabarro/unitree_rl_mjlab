@@ -6,6 +6,7 @@ import os
 from typing import TYPE_CHECKING
 
 import torch
+from mjlab.managers.event_manager import RecomputeLevel
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 
 if TYPE_CHECKING:
@@ -20,10 +21,10 @@ def reset_tray_at_hands(
   env_ids: torch.Tensor | None,
   robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
   tray_name: str = "tray",
-  site_names: tuple[str, str] = ("left_palm", "right_palm"),
-  z_offset: float = 0.0,
+  site_names: tuple[str, ...] = ("right_palm",),
+  z_offset: float = 0.08,
 ) -> None:
-  """Reset the tray root pose centered between the robot palms."""
+  """Reset the tray root pose near the robot palm site."""
   if env_ids is None:
     env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
 
@@ -39,15 +40,45 @@ def reset_tray_at_hands(
       f"Expected sites {site_names} on robot '{robot_cfg.name}', found ids {site_ids}."
     )
 
-  palm_pos = robot.data.site_pos_w[env_ids][:, site_ids, :]
-  palm_quat = robot.data.site_quat_w[env_ids][:, site_ids, :]
+  site_id = site_ids[0]
+  if _DEBUG:
+    print(
+      f"[reset_tray_at_hands] raw palm_pos before recompute="
+      f"{robot.data.site_pos_w[env_ids, site_id, :]}"
+    )
+  # Ensure joint resets are reflected in world-frame site poses.
+  env.sim.recompute_constants(RecomputeLevel.set_const_0)
+  if _DEBUG:
+    print(
+      f"[reset_tray_at_hands] raw palm_pos after recompute="
+      f"{robot.data.site_pos_w[env_ids, site_id, :]}"
+    )
 
-  mid_pos = palm_pos.mean(dim=1)
-  mid_pos[:, 2] += z_offset
-  mid_quat = palm_quat[:, 0, :]
+  palm_pos = robot.data.site_pos_w[env_ids, site_id, :].clone()
+  palm_quat = robot.data.site_quat_w[env_ids, site_id, :].clone()
 
-  root_pose = torch.cat([mid_pos, mid_quat], dim=-1)
+  if _DEBUG:
+    print(
+      f"[reset_tray_at_hands] env_ids={env_ids.tolist()} "
+      f"site_names={resolved_names} site_id={site_id}"
+    )
+    print(f"[reset_tray_at_hands] palm_pos={palm_pos}")
+    print(f"[reset_tray_at_hands] palm_quat={palm_quat}")
+
+  palm_pos[:, 2] += z_offset
+  root_pose = torch.cat([palm_pos, palm_quat], dim=-1)
+
+  if _DEBUG:
+    print(f"[reset_tray_at_hands] writing root_pose={root_pose}")
+
   tray.write_root_link_pose_to_sim(root_pose, env_ids=env_ids)
   tray.write_root_link_velocity_to_sim(
     torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids
   )
+
+  if _DEBUG:
+    try:
+      actual_pose = tray.data.root_link_pose_w[env_ids]
+    except Exception as exc:
+      actual_pose = f"<unavailable: {exc}>"
+    print(f"[reset_tray_at_hands] actual tray root_link_pose_w={actual_pose}")

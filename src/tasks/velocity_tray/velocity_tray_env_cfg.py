@@ -30,7 +30,7 @@ from mjlab.terrains.config import ROUGH_TERRAINS_CFG
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
 
-import src.tasks.velocity.mdp as mdp
+import src.tasks.velocity_tray.mdp as mdp
 
 
 def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:

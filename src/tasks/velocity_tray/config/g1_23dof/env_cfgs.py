@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from src.assets.objects import get_tray_cfg
+from mjlab.tasks.manipulation.config.yam.env_cfgs import get_cube_spec
 from src.assets.robots import (
   G1_23DOF_ACTION_SCALE,
   get_g1_23dof_robot_cfg,
@@ -18,7 +18,7 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg, RayCastSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
-from src.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
+from src.tasks.velocity_tray.velocity_tray_env_cfg import make_velocity_env_cfg
 
 
 def unitree_g1_23dof_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
@@ -31,7 +31,8 @@ def unitree_g1_23dof_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
   cfg.scene.entities = {
     "robot": get_g1_23dof_robot_cfg(),
-    "tray": get_tray_cfg(),
+    # Use a simple freejoint cube as the tray object for manipulation tests.
+    "tray": EntityCfg(spec_fn=lambda: get_cube_spec()),
   }
 
   # Set raycast sensor frame to G1-23DOF pelvis.
