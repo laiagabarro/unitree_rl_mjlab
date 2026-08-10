@@ -2,13 +2,14 @@
 
 from dataclasses import replace
 
-from mjlab.tasks.manipulation.config.yam.env_cfgs import get_cube_spec
+import mujoco
+
+from src.assets.objects.tray.tray_constants import get_tray_cfg
 from src.assets.robots import (
   G1_23DOF_ACTION_SCALE,
   get_g1_23dof_robot_cfg,
 )
 from src.assets.robots.unitree_g1.g1_23dof_constants import HOME_KEYFRAME
-from mjlab.entity import EntityCfg
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as envs_mdp
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -21,6 +22,34 @@ from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from src.tasks.velocity_tray.velocity_tray_env_cfg import make_velocity_env_cfg
 
 
+_ROBOT_PALM_SITE = "robot/right_palm"
+_TRAY_CENTER_SITE = "tray/tray_center"
+
+
+def add_tray_weld(spec: mujoco.MjSpec) -> None:
+  """Rigidly attach the tray center to the robot's right palm.
+
+  This callback runs after scene entities have been attached, so the site names
+  include the entity prefixes applied by :class:`mjlab.scene.Scene`.
+  """
+  required_sites = {_ROBOT_PALM_SITE, _TRAY_CENTER_SITE}
+  available_sites = {site.name for site in spec.sites}
+  missing_sites = required_sites - available_sites
+  if missing_sites:
+    raise ValueError(
+      "Cannot create the robot-tray weld; missing scene site(s): "
+      f"{sorted(missing_sites)}. Available sites: {sorted(available_sites)}"
+    )
+
+  spec.add_equality(
+    name="robot_tray_weld",
+    type=mujoco.mjtEq.mjEQ_WELD,
+    objtype=mujoco.mjtObj.mjOBJ_SITE,
+    name1=_ROBOT_PALM_SITE,
+    name2=_TRAY_CENTER_SITE,
+  )
+
+
 def unitree_g1_23dof_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   """Create Unitree G1-23DOF rough terrain velocity configuration."""
   cfg = make_velocity_env_cfg()
@@ -31,9 +60,9 @@ def unitree_g1_23dof_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
   cfg.scene.entities = {
     "robot": get_g1_23dof_robot_cfg(),
-    # Use a simple freejoint cube as the tray object for manipulation tests.
-    "tray": EntityCfg(spec_fn=lambda: get_cube_spec()),
+    "tray": get_tray_cfg(),
   }
+  cfg.scene.spec_fn = add_tray_weld
 
   # Set raycast sensor frame to G1-23DOF pelvis.
   for sensor in cfg.scene.sensors or ():
@@ -237,10 +266,13 @@ def unitree_g1_23dof_arms_up_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg
     joint_pos={**home_non_arm, **_VLA_ARM_JOINT_POS},
   )
 
-  # Override the robot entity with the new default arm positions.
+  # Preserve the tray and its scene-level weld while replacing the robot entity.
   robot_cfg = get_g1_23dof_robot_cfg()
   robot_cfg = replace(robot_cfg, init_state=vla_init_state)
-  cfg.scene.entities = {"robot": robot_cfg}
+  cfg.scene.entities = {
+    "robot": robot_cfg,
+    "tray": get_tray_cfg(),
+  }
 
   # Tighten arm pose reward stds so the policy learns to hold the VLA position.
   for std_key in ("std_walking", "std_running"):

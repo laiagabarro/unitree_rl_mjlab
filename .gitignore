@@ -12,6 +12,7 @@ deploy/robots/r1/build
 deploy/robots/a2/build
 src/assets/motions/g1/dance1_subject2.npz
 simulate/build
+Projecte_Context_20260810.md
 
 *.pyc
 __pycache__/
