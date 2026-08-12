@@ -13,6 +13,33 @@ if TYPE_CHECKING:
 
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
 
+def debug_obs(func, name: str):
+    def wrapped(env, *args, **kwargs):
+        value = func(env, *args, **kwargs)
+
+        if not torch.isfinite(value).all():
+            bad = ~torch.isfinite(value)
+
+            print("\n================ OBSERVATION NaN/INF ================")
+            print(f"Observation: {name}")
+            print(f"Shape: {tuple(value.shape)}")
+            print(f"Number of bad values: {bad.sum().item()}")
+            print(
+                "Bad indices:",
+                torch.nonzero(bad, as_tuple=False)[:20]
+                .detach()
+                .cpu(),
+            )
+            print(
+                "Values:",
+                value.flatten()[:20].detach().cpu(),
+            )
+            print("======================================================\n")
+
+        return value
+
+    return wrapped
+
 
 def foot_height(
   env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG

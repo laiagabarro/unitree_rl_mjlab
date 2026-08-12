@@ -8,6 +8,7 @@ from mjlab.entity import Entity
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 
 from .velocity_command import UniformVelocityCommandCfg
+from mjlab.managers.curriculum_manager import CurriculumTermCfg
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
@@ -105,3 +106,54 @@ def reward_weight(
     if env.common_step_counter > stage["step"]:
       reward_term_cfg.weight = stage["weight"]
   return torch.tensor([reward_term_cfg.weight])
+
+
+class reward_threshold_curriculum:
+  """Ramp a target reward's weight once another reward's episodic average
+  (smoothed with an EMA across resets) crosses a threshold.
+
+  Note: reads env.reward_manager._episode_sums, a private mjlab attribute
+  (pinned to mjlab==1.6.0). If mjlab is upgraded and this breaks, check
+  RewardManager.reset() for the new equivalent.
+  """
+
+  def __init__(self, cfg: CurriculumTermCfg, env: ManagerBasedRlEnv):
+    del cfg, env  # Unused; state initialized lazily below.
+    self.ema: float | None = None
+    self.triggered = False
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor | slice,
+    trigger_reward: str,
+    threshold: float,
+    target_reward: str,
+    target_weight: float,
+    ema_alpha: float = 0.05,
+  ) -> dict[str, float]:
+    episode_sums = env.reward_manager._episode_sums[trigger_reward]
+
+    if isinstance(env_ids, torch.Tensor) and env_ids.numel() == 0:
+      avg_reward_rate = self.ema if self.ema is not None else 0.0
+    else:
+      avg_reward_rate = (
+        torch.mean(episode_sums[env_ids]) / env.max_episode_length_s
+      ).item()
+
+    self.ema = (
+      avg_reward_rate
+      if self.ema is None
+      else ema_alpha * avg_reward_rate + (1 - ema_alpha) * self.ema
+    )
+
+    if not self.triggered and self.ema > threshold:
+      self.triggered = True
+
+    if self.triggered:
+      env.reward_manager.get_term_cfg(target_reward).weight = target_weight
+
+    return {"ema": self.ema, "triggered": float(self.triggered)}
+
+  def reset(self, env_ids=None) -> None:
+    del env_ids  # State is global across envs, not per-env; don't clear it.

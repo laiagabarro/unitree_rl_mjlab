@@ -8,7 +8,7 @@ from mjlab.entity import Entity
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor import BuiltinSensor, ContactSensor
-from mjlab.utils.lab_api.math import quat_apply_inverse
+from mjlab.utils.lab_api.math import quat_apply, quat_apply_inverse, quat_inv
 from mjlab.utils.lab_api.string import (
   resolve_matching_names_values,
 )
@@ -426,3 +426,70 @@ def stand_still(
             reward *= scale
     return reward
 
+def _up_axis_world(quat: torch.Tensor) -> torch.Tensor:
+  """Local +Z axis of a body/site, expressed in world frame."""
+  z_local = torch.zeros_like(quat[..., :3])
+  z_local[..., 2] = 1.0
+  return quat_apply(quat, z_local)
+
+
+def tray_orientation(
+  env: ManagerBasedRlEnv,
+  tray_name: str = "tray",
+  k: float = 20.0,
+) -> torch.Tensor:
+  """Reward the tray staying horizontal (tray z-axis vs world z-axis)."""
+  tray: Entity = env.scene[tray_name]
+  site_id = tray.find_sites(("tray_center",))[0][0]
+  tray_quat = tray.data.site_quat_w[:, site_id, :]
+
+  z_tray_w = _up_axis_world(tray_quat)
+  cos_theta = torch.clamp(z_tray_w[:, 2], -1.0, 1.0)
+  theta = torch.acos(cos_theta)
+  return torch.exp(-k * theta**2)
+
+
+def cube_upright(
+  env: ManagerBasedRlEnv,
+  tray_name: str = "tray",
+  cube_names: tuple[str, ...] = ("cube_0", "cube_1", "cube_2", "cube_3"),
+  k: float = 8.0,
+) -> torch.Tensor:
+  """Reward each cube's z-axis staying aligned with the tray's z-axis."""
+  tray: Entity = env.scene[tray_name]
+  site_id = tray.find_sites(("tray_center",))[0][0]
+  z_tray_w = _up_axis_world(tray.data.site_quat_w[:, site_id, :])
+
+  total = torch.zeros(env.num_envs, device=env.device)
+  for cube_name in cube_names:
+    cube: Entity = env.scene[cube_name]
+    z_cube_w = _up_axis_world(cube.data.root_link_quat_w)
+    cos_theta = torch.clamp(torch.sum(z_cube_w * z_tray_w, dim=-1), -1.0, 1.0)
+    theta = torch.acos(cos_theta)
+    total += torch.exp(-k * theta**2)
+  return total / len(cube_names)
+
+
+def cube_inside_tray(
+  env: ManagerBasedRlEnv,
+  tray_name: str = "tray",
+  cube_names: tuple[str, ...] = ("cube_0", "cube_1", "cube_2", "cube_3"),
+  height_threshold: float = 0.1,
+) -> torch.Tensor:
+  """Binary reward: 1 if a cube's height above the tray (tray-local frame)
+  stays close to its resting height (touching the surface), 0 if it has
+  fallen off."""
+  tray: Entity = env.scene[tray_name]
+  site_id = tray.find_sites(("tray_center",))[0][0]
+  tray_pos = tray.data.site_pos_w[:, site_id, :]
+  tray_quat_inv = quat_inv(tray.data.site_quat_w[:, site_id, :])
+
+  total = torch.zeros(env.num_envs, device=env.device)
+  for cube_name in cube_names:
+    cube: Entity = env.scene[cube_name]
+    half_size = env.sim.model.geom_size[:, cube.indexing.geom_ids[0], 0]
+    local = quat_apply(tray_quat_inv, cube.data.root_link_pos_w - tray_pos)
+    height_local = local[:, 1]  # tray-local "up" axis
+    delta_h_error = torch.abs(height_local - half_size)
+    total += (delta_h_error < height_threshold).float()
+  return total / len(cube_names)

@@ -57,33 +57,33 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
 
   actor_terms = {
     "base_ang_vel": ObservationTermCfg(
-      func=mdp.builtin_sensor,
+      func=mdp.debug_obs(mdp.builtin_sensor,"base_ang_vel"),
       params={"sensor_name": "robot/imu_ang_vel"},
       noise=Unoise(n_min=-0.2, n_max=0.2),
     ),
     "projected_gravity": ObservationTermCfg(
-      func=mdp.projected_gravity,
+      func=mdp.debug_obs(mdp.projected_gravity,"projected_gravity"),
       noise=Unoise(n_min=-0.05, n_max=0.05),
     ),
     "command": ObservationTermCfg(
-      func=mdp.generated_commands,
+      func=mdp.debug_obs(mdp.generated_commands,"command"),
       params={"command_name": "twist"},
     ),
     "phase": ObservationTermCfg(
-      func=mdp.phase,
+      func=mdp.debug_obs(mdp.phase, "phase"),
       params={"period": 0.6, "command_name": "twist"},
     ),
     "joint_pos": ObservationTermCfg(
-      func=mdp.joint_pos_rel,
+      func=mdp.debug_obs(mdp.joint_pos_rel,"joint_pos"),
       noise=Unoise(n_min=-0.01, n_max=0.01),
     ),
     "joint_vel": ObservationTermCfg(
-      func=mdp.joint_vel_rel,
+      func=mdp.debug_obs(mdp.joint_vel_rel,"joint_vel"),
       noise=Unoise(n_min=-1.5, n_max=1.5),
     ),
-    "actions": ObservationTermCfg(func=mdp.last_action),
+    "actions": ObservationTermCfg(func=mdp.debug_obs(mdp.last_action,"actions")),
     "height_scan": ObservationTermCfg(
-      func=envs_mdp.height_scan,
+      func=mdp.debug_obs(envs_mdp.height_scan, "height_scan"),
       params={"sensor_name": "terrain_scan"},
       noise=Unoise(n_min=-0.1, n_max=0.1),
       scale=1 / terrain_scan.max_distance,
@@ -93,29 +93,29 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
   critic_terms = {
     **actor_terms,
     "base_lin_vel": ObservationTermCfg(
-      func=mdp.builtin_sensor,
+      func=mdp.debug_obs(mdp.builtin_sensor, "base_lin_vel"),
       params={"sensor_name": "robot/imu_lin_vel"},
       noise=Unoise(n_min=-0.5, n_max=0.5),
     ),
     "height_scan": ObservationTermCfg(
-      func=envs_mdp.height_scan,
+      func=mdp.debug_obs(envs_mdp.height_scan,"height_scan"),
       params={"sensor_name": "terrain_scan"},
       scale=1 / terrain_scan.max_distance,
     ),
     "foot_height": ObservationTermCfg(
-      func=mdp.foot_height,
+      func=mdp.debug_obs(mdp.foot_height,"foot_height"),
       params={"asset_cfg": SceneEntityCfg("robot", site_names=())},  # Set per-robot.
     ),
     "foot_air_time": ObservationTermCfg(
-      func=mdp.foot_air_time,
+      func=mdp.debug_obs(mdp.foot_air_time,"foot_air_time"),
       params={"sensor_name": "feet_ground_contact"},
     ),
     "foot_contact": ObservationTermCfg(
-      func=mdp.foot_contact,
+      func=mdp.debug_obs(mdp.foot_contact,"foot_contact"),
       params={"sensor_name": "feet_ground_contact"},
     ),
     "foot_contact_forces": ObservationTermCfg(
-      func=mdp.foot_contact_forces,
+      func=mdp.debug_obs(mdp.foot_contact_forces,"foot_contact_forces"),
       params={"sensor_name": "feet_ground_contact"},
     ),
   }
@@ -383,6 +383,29 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "command_name": "twist",
         "command_threshold": 0.1,
         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+      },
+    ),
+    "tray_orientation": RewardTermCfg(
+      func=mdp.tray_orientation,
+      weight=0.0,  # Ramped up via curriculum.
+      params={"tray_name": "tray", "k": 20.0},
+    ),
+    "cube_upright": RewardTermCfg(
+      func=mdp.cube_upright,
+      weight=0.0,  # Ramped up via curriculum.
+      params={
+        "tray_name": "tray",
+        "cube_names": ("cube_0", "cube_1", "cube_2", "cube_3"),
+        "k": 8.0,
+      },
+    ),
+    "cube_inside_tray": RewardTermCfg(
+      func=mdp.cube_inside_tray,
+      weight=0.0,  # Ramped up via curriculum.
+      params={
+        "tray_name": "tray",
+        "cube_names": ("cube_0", "cube_1", "cube_2", "cube_3"),
+        "height_threshold": 0.1,
       },
     ),
   }

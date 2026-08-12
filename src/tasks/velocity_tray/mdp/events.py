@@ -210,18 +210,18 @@ def randomize_cubes_physics(
             operation="abs",
         )
 
-        dr.pseudo_inertia(
-            env,
-            env_ids,
-            alpha_range=(
-                alpha_min,
-                alpha_max,
-            ),
-            distribution="uniform",
-            asset_cfg=SceneEntityCfg(
-                name=cube_name,
-            ),
-        )
+        # dr.pseudo_inertia(
+        #     env,
+        #     env_ids,
+        #     alpha_range=(
+        #         alpha_min,
+        #         alpha_max,
+        #     ),
+        #     distribution="uniform",
+        #     asset_cfg=SceneEntityCfg(
+        #         name=cube_name,
+        #     ),
+        # )
 
 def reset_cubes_on_tray(
     env: ManagerBasedRlEnv,
@@ -447,22 +447,22 @@ def reset_cubes_on_tray(
             dim=-1,
         )
 
-        hidden_pose = torch.zeros_like(cube_pose)
-        hidden_pose[:, 0] = 100.0 + cube_idx
-        hidden_pose[:, 1:] = torch.tensor(
-            [100.0, 100.0, 0.5, 0.5, 0.5, 0.5],
-            device=env.device,
-            dtype=cube_pose.dtype,
-        )
+        # hidden_pose = torch.zeros_like(cube_pose)
+        # hidden_pose[:, 0] = 100.0 + cube_idx
+        # hidden_pose[:, 1:] = torch.tensor(
+        #     [100.0, 100.0, 0.5, 0.5, 0.5, 0.5],
+        #     device=env.device,
+        #     dtype=cube_pose.dtype,
+        # )
 
-        final_pose = torch.where(
-            active.unsqueeze(-1),
-            cube_pose,
-            hidden_pose,
-        )
+        # final_pose = torch.where(
+        #     active.unsqueeze(-1),
+        #     cube_pose,
+        #     hidden_pose,
+        # )
 
         cube.write_root_link_pose_to_sim(
-            final_pose,
+            cube_pose,
             env_ids=env_ids,
         )
 
