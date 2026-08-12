@@ -199,6 +199,18 @@ def unitree_g1_23dof_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
   return cfg
 
+# Tray arm pose: joints not listed default to 0.0 (remaining entries come from HOME_KEYFRAME).
+_TRAY_ARM_JOINT_POS = {
+    "left_shoulder_pitch_joint":  -0.55,
+    "left_shoulder_roll_joint":    0.25,
+    "left_shoulder_yaw_joint":     0.0,
+    "left_elbow_joint":           -0.25,
+    "left_wrist_roll_joint":       0.0,
+    "right_shoulder_pitch_joint":  0.0,
+    "right_shoulder_roll_joint":   0.0,
+    "right_shoulder_yaw_joint":    0.0,   # must stay 0
+    "right_wrist_roll_joint":      1.57079632679,  # ~90 deg, palm facing up
+}
 
 def unitree_g1_23dof_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   """Create Unitree G1-23DOF flat terrain velocity configuration."""
@@ -208,6 +220,24 @@ def unitree_g1_23dof_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.sim.mujoco.ccd_iterations = 50
   cfg.sim.contact_sensor_maxmatch = 64
   cfg.sim.nconmax = None
+
+  _ARM_KEYWORDS = ("shoulder", "elbow", "wrist")
+  home_non_arm = {
+    k: v for k, v in HOME_KEYFRAME.joint_pos.items()
+    if not any(kw in k for kw in _ARM_KEYWORDS)
+  }
+
+  tray_init_state = replace(
+    HOME_KEYFRAME,
+    joint_pos={**home_non_arm, **_TRAY_ARM_JOINT_POS},
+  )
+
+  robot_cfg = get_g1_23dof_robot_cfg()
+  robot_cfg = replace(robot_cfg, init_state=tray_init_state)
+  cfg.scene.entities = {
+    "robot": robot_cfg,
+    "tray": get_tray_cfg(),
+  }
 
   # Switch to flat terrain.
   assert cfg.scene.terrain is not None
