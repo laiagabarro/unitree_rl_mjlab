@@ -20,7 +20,7 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg, RayCastSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
-from src.tasks.velocity_tray.mdp.events import reset_cube_on_tray
+from src.tasks.velocity_tray.mdp.events import reset_cubes_on_tray
 from src.tasks.velocity_tray.velocity_tray_env_cfg import make_velocity_env_cfg
 
 
@@ -312,7 +312,7 @@ def unitree_g1_23dof_flat_env_cfg(
         play=play,
     )
 
-    cfg.sim.njmax = 300
+    cfg.sim.njmax = 1000
     cfg.sim.mujoco.ccd_iterations = 50
     cfg.sim.contact_sensor_maxmatch = 64
     cfg.sim.nconmax = None
@@ -360,7 +360,10 @@ def unitree_g1_23dof_flat_env_cfg(
     cfg.scene.entities = {
         "robot": robot_cfg,
         "tray": get_tray_cfg(),
-        "cube": get_cube_cfg(),
+        "cube_0": get_cube_cfg(),
+        "cube_1": get_cube_cfg(),
+        "cube_2": get_cube_cfg(),
+        "cube_3": get_cube_cfg(),
     }
 
     # =========================================================
@@ -374,13 +377,31 @@ def unitree_g1_23dof_flat_env_cfg(
 
     assert "reset_tray" in cfg.events
 
-    cfg.events["reset_cube"] = EventTermCfg(
-        func=reset_cube_on_tray,
+    cfg.events["reset_cubes"] = EventTermCfg(
+        func=reset_cubes_on_tray,
         mode="reset",
         params={
             "tray_name": "tray",
-            "cube_name": "cube",
+            "cube_names": (
+                "cube_0",
+                "cube_1",
+                "cube_2",
+                "cube_3",
+            ),
+            "cube_half_size": 0.03,
             "z_offset": 0.04,
+            "num_cubes_min": 0,
+            "num_cubes_max": 4,
+
+            # Visual center of the tray in tray_center coordinates.
+            "x_center": 0.10,
+
+            # Random position ranges.
+            "x_half_range": 0.07,
+            "z_half_range": 0.10,
+
+            # Extra distance between cubes.
+            "min_separation": 0.01,
         },
     )
 

@@ -1,21 +1,18 @@
 """Free cube asset configuration.
 
-The cube is a lightweight rigid box meant to rest on top of the tray,
-held in place by gravity + friction alone.
+Each cube entity receives randomized physical and visual properties
+when its MuJoCo specification is created:
 
-The cube is NOT welded to the tray.
+- size
+- mass
+- color
 
-The geometry uses MuJoCo box half-extents, so:
-
-    CUBE_HALF_SIZE = 0.03 m
-
-means:
-
-    full cube size = 0.06 m
-    = 6 cm
+The properties remain fixed for that environment/model and the
+cube position and activation state are randomized at every reset.
 """
 
 from pathlib import Path
+import random
 
 import mujoco
 
@@ -35,24 +32,126 @@ CUBE_XML: Path = (
 assert CUBE_XML.exists()
 
 
-# MuJoCo `box size` is specified using half-extents.
+# =========================================================
+# RANDOMIZATION RANGES
+# =========================================================
+
+# MuJoCo box `size` uses half-extents.
 #
-# 0.03 m -> 6 cm full cube.
-CUBE_HALF_SIZE: float = 0.03
+# Therefore:
+#
+#   0.02 -> 4 cm full cube
+#   0.03 -> 6 cm full cube
+#   0.04 -> 8 cm full cube
+#
+CUBE_HALF_SIZE_MIN: float = 0.02
+CUBE_HALF_SIZE_MAX: float = 0.04
+
+# Cube mass in kilograms.
+#
+# 0.05 -> 50 g
+# 0.30 -> 300 g
+#
+CUBE_MASS_MIN: float = 0.05
+CUBE_MASS_MAX: float = 0.30
+
+
+# =========================================================
+# VIVID COLORS
+# =========================================================
+#
+# RGB values are in the [0, 1] range.
+#
+
+CUBE_COLORS = (
+    (0.05, 0.35, 1.00, 1.0),  # blue
+    (1.00, 0.05, 0.05, 1.0),  # red
+    (0.05, 0.85, 0.15, 1.0),  # green
+    (1.00, 0.80, 0.00, 1.0),  # yellow
+    (0.65, 0.10, 1.00, 1.0),  # purple
+    (1.00, 0.35, 0.02, 1.0),  # orange
+)
+
+
+def _randomize_cube_spec(
+    spec: mujoco.MjSpec,
+) -> mujoco.MjSpec:
+    """Randomize the physical and visual properties of one cube."""
+
+    # ---------------------------------------------------------
+    # Random cube size.
+    # ---------------------------------------------------------
+
+    half_size = random.uniform(
+        CUBE_HALF_SIZE_MIN,
+        CUBE_HALF_SIZE_MAX,
+    )
+
+    # ---------------------------------------------------------
+    # Random cube mass.
+    # ---------------------------------------------------------
+
+    mass = random.uniform(
+        CUBE_MASS_MIN,
+        CUBE_MASS_MAX,
+    )
+
+    # ---------------------------------------------------------
+    # Random vivid color.
+    # ---------------------------------------------------------
+
+    rgba = random.choice(CUBE_COLORS)
+
+    # ---------------------------------------------------------
+    # Apply geometry properties.
+    # ---------------------------------------------------------
+
+    if len(spec.geoms) != 1:
+        raise ValueError(
+            "Expected exactly one geom in cube.xml, "
+            f"found {len(spec.geoms)}."
+        )
+
+    geom = spec.geoms[0]
+
+    # MuJoCo box size = half-extents.
+    geom.size = (
+        half_size,
+        half_size,
+        half_size,
+    )
+
+    geom.mass = mass
+
+    # ---------------------------------------------------------
+    # Apply material color.
+    # ---------------------------------------------------------
+
+    if len(spec.materials) != 1:
+        raise ValueError(
+            "Expected exactly one material in cube.xml, "
+            f"found {len(spec.materials)}."
+        )
+
+    material = spec.materials[0]
+
+    material.rgba = rgba
+
+    return spec
 
 
 def get_spec() -> mujoco.MjSpec:
-    """Load the MuJoCo cube specification."""
+    """Load and randomize the MuJoCo cube specification."""
 
     spec = mujoco.MjSpec.from_file(
         str(CUBE_XML)
     )
 
-    return spec
+    return _randomize_cube_spec(spec)
 
 
 def get_cube_cfg() -> EntityCfg:
-    """Return the cube entity configuration."""
+    """Return a cube entity configuration with randomized properties."""
 
     return EntityCfg(
         init_state=EntityCfg.InitialStateCfg(
