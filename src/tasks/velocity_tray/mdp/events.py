@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import math
 import os
 from typing import TYPE_CHECKING
 
 import torch
 
-from mjlab.managers.event_manager import RecomputeLevel
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.utils.lab_api.math import quat_apply, quat_inv, quat_mul
 
@@ -16,19 +14,34 @@ if TYPE_CHECKING:
     from mjlab.envs import ManagerBasedRlEnv
 
 
-# Debug flag - set MJLAB_DEBUG_COMMANDS=1 to enable debug prints
-_DEBUG = os.getenv("MJLAB_DEBUG_COMMANDS", "0").lower() in ("1", "true", "yes")
+# Set MJLAB_DEBUG_COMMANDS=1 to enable debug prints.
+_DEBUG = os.getenv("MJLAB_DEBUG_COMMANDS", "0").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 
 def reset_tray_at_hands(
-    env,
+    env: ManagerBasedRlEnv,
     env_ids: torch.Tensor | None,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     tray_name: str = "tray",
     site_names: tuple[str, ...] = ("right_palm",),
     z_offset: float = 0.08,
 ) -> None:
-    """Reset tray so tray_center is positioned at the right palm."""
+    """Reset tray so its tray_center site is exactly at right_palm.
+
+    The tray_center local position and orientation are taken from the
+    MuJoCo site defined in food_tray.xml. Nothing is hard-coded here
+    regarding the site's rotation.
+
+    The desired constraint is:
+
+        tray_center_world == right_palm_world
+
+    for both position and orientation.
+    """
 
     if env_ids is None:
         env_ids = torch.arange(
@@ -40,358 +53,389 @@ def reset_tray_at_hands(
     robot = env.scene[robot_cfg.name]
     tray = env.scene[tray_name]
 
-    if isinstance(site_names, str):
-        site_names = (site_names,)
-
-    # =========================================================
-    # ONLY RIGHT HAND
-    # =========================================================
+    # ---------------------------------------------------------
+    # RIGHT PALM
+    # ---------------------------------------------------------
 
     site_ids, resolved_names = robot.find_sites(("right_palm",))
 
     if len(site_ids) != 1:
         raise ValueError(
-            f"Could not find exactly one right_palm site. "
+            "Could not find exactly one right_palm site. "
             f"Found: {resolved_names}"
         )
 
-    site_id = site_ids[0]
+    palm_site_id = site_ids[0]
 
-    # Update FK/site poses AFTER robot joint reset
+    # Make sure FK is up to date after the robot reset.
     env.sim.forward()
 
     palm_pos = robot.data.site_pos_w[
-        env_ids, site_id, :
+        env_ids, palm_site_id, :
     ].clone()
 
     palm_quat = robot.data.site_quat_w[
-        env_ids, site_id, :
+        env_ids, palm_site_id, :
     ].clone()
 
-    # =========================================================
-    # DEBUG: RIGHT PALM
-    # =========================================================
+    # ---------------------------------------------------------
+    # TRAY CENTER SITE
+    #
+    # IMPORTANT:
+    # Read the actual site transform from MuJoCo.
+    #
+    # This already includes:
+    #
+    #   pos="0 -0.1 -0.03"
+    #   quat="0.5 0.5 0.5 0.5"
+    #
+    # from food_tray.xml.
+    # ---------------------------------------------------------
+
+    tray_site_ids, tray_site_names = tray.find_sites(("tray_center",))
+
+    if len(tray_site_ids) != 1:
+        raise ValueError(
+            "Could not find exactly one tray_center site. "
+            f"Found: {tray_site_names}"
+        )
+
+    tray_site_id = tray_site_ids[0]
+
+    # At this point the tray is still at its current/default pose.
+    # The site position/orientation relative to the tray root is
+    # therefore obtained from the MuJoCo model itself.
+    #
+    # site_pos_w/site_quat_w are world-frame values, so we first
+    # obtain the local transform from the tray root.
+    tray_root_pos = tray.data.root_link_pos_w[
+        env_ids
+    ].clone()
+
+    tray_root_quat = tray.data.root_link_quat_w[
+        env_ids
+    ].clone()
+
+    tray_site_pos_w = tray.data.site_pos_w[
+        env_ids, tray_site_id, :
+    ].clone()
+
+    tray_site_quat_w = tray.data.site_quat_w[
+        env_ids, tray_site_id, :
+    ].clone()
+
+    # Convert the current world-frame site pose into the tray-root
+    # local frame.
+    tray_center_pos_local = quat_apply(
+        quat_inv(tray_root_quat),
+        tray_site_pos_w - tray_root_pos,
+    )
+
+    tray_center_quat_local = quat_mul(
+        quat_inv(tray_root_quat),
+        tray_site_quat_w,
+    )
+
+    # ---------------------------------------------------------
+    # DEBUG
+    # ---------------------------------------------------------
 
     if _DEBUG:
         print(
-            f"[reset_tray_at_hands] env_ids={env_ids.tolist()} "
-            f"site_names={resolved_names} site_id={site_id}"
+            "[reset_tray_at_hands] RIGHT PALM"
         )
+        print(f"    pos  = {palm_pos}")
+        print(f"    quat = {palm_quat}")
 
         print(
-            f"[reset_tray_at_hands] palm_pos={palm_pos}"
+            "[reset_tray_at_hands] TRAY CENTER LOCAL"
         )
+        print(f"    pos  = {tray_center_pos_local}")
+        print(f"    quat = {tray_center_quat_local}")
 
-        print(
-            f"[reset_tray_at_hands] palm_quat={palm_quat}"
-        )
-
-    # =========================================================
-    # DEBUG AXES
+    # ---------------------------------------------------------
+    # SOLVE ROOT ORIENTATION
     #
-    # These are the local X/Y/Z axes expressed in world frame.
-    # =========================================================
-
-    axis_x = torch.tensor(
-        [1.0, 0.0, 0.0],
-        device=env.device,
-        dtype=palm_quat.dtype,
-    ).unsqueeze(0).expand(
-        palm_quat.shape[0],
-        -1,
-    )
-
-    axis_y = torch.tensor(
-        [0.0, 1.0, 0.0],
-        device=env.device,
-        dtype=palm_quat.dtype,
-    ).unsqueeze(0).expand(
-        palm_quat.shape[0],
-        -1,
-    )
-
-    axis_z = torch.tensor(
-        [0.0, 0.0, 1.0],
-        device=env.device,
-        dtype=palm_quat.dtype,
-    ).unsqueeze(0).expand(
-        palm_quat.shape[0],
-        -1,
-    )
-
-    if _DEBUG:
-        palm_x_world = quat_apply(
-            palm_quat,
-            axis_x,
-        )
-
-        palm_y_world = quat_apply(
-            palm_quat,
-            axis_y,
-        )
-
-        palm_z_world = quat_apply(
-            palm_quat,
-            axis_z,
-        )
-
-        print(
-            "[reset_tray_at_hands] RIGHT PALM WORLD AXES:"
-        )
-
-        print(
-            f"    X = {palm_x_world}"
-        )
-
-        print(
-            f"    Y = {palm_y_world}"
-        )
-
-        print(
-            f"    Z = {palm_z_world}"
-        )
-
-    # =========================================================
-    # TRAY CENTER LOCAL TRANSFORM
+    # root_quat * tray_center_local_quat = palm_quat
     #
-    # food_tray.xml:
+    # therefore:
     #
-    #     <site
-    #         name="tray_center"
-    #         pos="0 0 0.02"
-    #         ...
-    #     />
-    #
-    # The site itself has no local quaternion in the XML (identity),
-    # but the tray needs to be offset and rotated relative to the
-    # palm frame so it sits flat and faces the robot correctly.
-    # tray_center_pos / tray_center_quat below encode that offset:
-    #
-    #     tray_center_world_pos  = root_pos  + root_quat * tray_center_pos
-    #     tray_center_world_quat = root_quat * tray_center_quat
-    #
-    # We want tray_center to align with the right palm, so we solve
-    # for root_pos / root_quat given palm_pos / palm_quat and this
-    # fixed local offset.
-    # =========================================================
-
-    tray_center_pos = torch.tensor(
-        [0.0, -0.1, -0.03],
-        device=env.device,
-        dtype=palm_pos.dtype,
-    )
-
-    # Base rotation: lay the tray flat (90 degrees around X).
-    angle_x = math.pi / 2
-    quat_x = torch.tensor(
-        [math.cos(angle_x / 2), math.sin(angle_x / 2), 0.0, 0.0],
-        device=env.device,
-        dtype=palm_quat.dtype,
-    )
-
-    # Additional rotation: spin the tray around its own (now flat)
-    # axis so its long side faces the robot.
-    angle_z = math.pi / 2
-    quat_z = torch.tensor(
-        [math.cos(angle_z / 2), 0.0, 0.0, math.sin(angle_z / 2)],
-        device=env.device,
-        dtype=palm_quat.dtype,
-    )
-
-    tray_center_quat_single = quat_mul(quat_z, quat_x)
-
-    tray_center_quat = tray_center_quat_single.unsqueeze(0).expand(
-        palm_quat.shape[0],
-        -1,
-    )
+    # root_quat = palm_quat * inverse(tray_center_local_quat)
+    # ---------------------------------------------------------
 
     root_quat = quat_mul(
         palm_quat,
-        quat_inv(tray_center_quat),
+        quat_inv(tray_center_quat_local),
     )
 
-    # =========================================================
-    # DEBUG: TRAY AXES
-    # =========================================================
-
-    if _DEBUG:
-        tray_x_world = quat_apply(
-            root_quat,
-            axis_x,
-        )
-
-        tray_y_world = quat_apply(
-            root_quat,
-            axis_y,
-        )
-
-        tray_z_world = quat_apply(
-            root_quat,
-            axis_z,
-        )
-
-        print(
-            "[reset_tray_at_hands] TRAY CENTER WORLD AXES:"
-        )
-
-        print(
-            f"    X = {tray_x_world}"
-        )
-
-        print(
-            f"    Y = {tray_y_world}"
-        )
-
-        print(
-            f"    Z = {tray_z_world}"
-        )
-
-    # =========================================================
-    # POSITION
+    # ---------------------------------------------------------
+    # SOLVE ROOT POSITION
     #
-    # tray_center is located at:
+    # tray_center_world =
     #
-    #     root_pos + root_quat * tray_center_pos
+    #     root_pos + root_quat * tray_center_pos_local
     #
     # We want:
     #
-    #     tray_center == right_palm
+    #     tray_center_world = palm_pos
     #
-    # Therefore:
+    # therefore:
     #
-    #     root_pos = palm_pos - rotated_offset
-    #
-    # =========================================================
+    #     root_pos =
+    #         palm_pos -
+    #         root_quat * tray_center_pos_local
+    # ---------------------------------------------------------
 
     site_offset_world = quat_apply(
         root_quat,
-        tray_center_pos.unsqueeze(0).expand(
-            palm_pos.shape[0],
-            -1,
-        ),
+        tray_center_pos_local,
     )
 
     root_pos = palm_pos - site_offset_world
 
-    # =========================================================
-    # DEBUG: POSITIONS
-    # =========================================================
+    # ---------------------------------------------------------
+    # DEBUG
+    # ---------------------------------------------------------
 
     if _DEBUG:
-        reconstructed_tray_center_pos = (
+        reconstructed_center = (
             root_pos + site_offset_world
         )
 
-        print(
-            "[reset_tray_at_hands] POSITIONS:"
+        reconstructed_quat = quat_mul(
+            root_quat,
+            tray_center_quat_local,
         )
 
         print(
-            f"    right_palm  = {palm_pos}"
+            "[reset_tray_at_hands] SOLVED TRAY ROOT"
         )
+        print(f"    root_pos  = {root_pos}")
+        print(f"    root_quat = {root_quat}")
 
         print(
-            f"    tray_root   = {root_pos}"
+            "[reset_tray_at_hands] RECONSTRUCTED CENTER"
         )
+        print(f"    pos  = {reconstructed_center}")
+        print(f"    quat = {reconstructed_quat}")
 
         print(
-            f"    tray_center = {reconstructed_tray_center_pos}"
+            "[reset_tray_at_hands] ERRORS"
         )
-
         print(
-            f"    center_error = "
-            f"{reconstructed_tray_center_pos - palm_pos}"
+            f"    position = "
+            f"{reconstructed_center - palm_pos}"
+        )
+        print(
+            f"    quaternion = "
+            f"{reconstructed_quat - palm_quat}"
         )
 
-    # =========================================================
-    # ROOT POSE
-    # =========================================================
+    # ---------------------------------------------------------
+    # WRITE TRAY ROOT POSE
+    # ---------------------------------------------------------
 
     root_pose = torch.cat(
         [root_pos, root_quat],
         dim=-1,
     )
 
-    # =========================================================
-    # DEBUG: QUATERNION VERIFICATION
-    # =========================================================
-
-    if _DEBUG:
-        # Verify:
-        #
-        #     root_quat * tray_center_local_quat
-        #         == palm_quat
-        #
-        reconstructed_palm_quat = quat_mul(
-            root_quat,
-            tray_center_quat,
-        )
-
-        print(
-            "[reset_tray_at_hands] "
-            "tray_center_local_quat="
-            f"{tray_center_quat}"
-        )
-
-        print(
-            f"[reset_tray_at_hands] root_pos={root_pos}"
-        )
-
-        print(
-            f"[reset_tray_at_hands] root_quat={root_quat}"
-        )
-
-        print(
-            "[reset_tray_at_hands] "
-            f"reconstructed_palm_quat="
-            f"{reconstructed_palm_quat}"
-        )
-
-        print(
-            f"[reset_tray_at_hands] palm_quat="
-            f"{palm_quat}"
-        )
-
-        print(
-            f"[reset_tray_at_hands] writing root_pose="
-            f"{root_pose}"
-        )
-
-    # =========================================================
-    # WRITE TRAY POSE
-    # =========================================================
-
     tray.write_root_link_pose_to_sim(
         root_pose,
         env_ids=env_ids,
     )
 
-    # =========================================================
-    # RESET TRAY VELOCITY
-    # =========================================================
-
+    # Reset tray velocity.
     tray.write_root_link_velocity_to_sim(
         torch.zeros(
             (len(env_ids), 6),
             device=env.device,
+            dtype=root_pose.dtype,
         ),
         env_ids=env_ids,
     )
 
-    # Update simulation
     env.sim.forward()
 
-    # =========================================================
-    # DEBUG: ACTUAL TRAY POSE AFTER FORWARD
-    # =========================================================
+    # ---------------------------------------------------------
+    # FINAL DEBUG
+    # ---------------------------------------------------------
 
     if _DEBUG:
-        actual_pose = tray.data.root_link_pose_w[
+        actual_tray_root = tray.data.root_link_pose_w[
+            env_ids
+        ]
+
+        actual_center_pos = tray.data.site_pos_w[
+            env_ids, tray_site_id, :
+        ]
+
+        actual_center_quat = tray.data.site_quat_w[
+            env_ids, tray_site_id, :
+        ]
+
+        print(
+            "[reset_tray_at_hands] AFTER FORWARD"
+        )
+        print(f"    tray root = {actual_tray_root}")
+        print(f"    center pos = {actual_center_pos}")
+        print(f"    center quat = {actual_center_quat}")
+
+        print(
+            "[reset_tray_at_hands] CENTER ERROR"
+        )
+        print(
+            f"    pos = {actual_center_pos - palm_pos}"
+        )
+        print(
+            f"    quat = {actual_center_quat - palm_quat}"
+        )
+
+
+def reset_cube_on_tray(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor | None,
+    tray_name: str = "tray",
+    cube_name: str = "cube",
+    cube_half_size: float = 0.03,
+    z_offset: float = 0.05,
+) -> None:
+    """Place a free cube on top of the tray.
+
+    The cube is not welded to the tray.
+
+    Its XY position is the tray_center position and its bottom face
+    is placed on top of the tray surface.
+
+    `cube_half_size` is the half-size of the cube geometry.
+
+    For the current cube:
+
+        half-size = 0.03 m
+        full size = 0.06 m
+
+    The cube center is therefore placed one half-size above the
+    tray surface.
+    """
+
+    if env_ids is None:
+        env_ids = torch.arange(
+            env.num_envs,
+            device=env.device,
+            dtype=torch.int,
+        )
+
+    tray = env.scene[tray_name]
+    cube = env.scene[cube_name]
+
+    # ---------------------------------------------------------
+    # TRAY CENTER
+    # ---------------------------------------------------------
+
+    env.sim.forward()
+
+    site_ids, resolved_names = tray.find_sites(("tray_center",))
+
+    if len(site_ids) != 1:
+        raise ValueError(
+            "Could not find exactly one tray_center site. "
+            f"Found: {resolved_names}"
+        )
+
+    site_id = site_ids[0]
+
+    tray_center_pos_w = tray.data.site_pos_w[
+        env_ids, site_id, :
+    ].clone()
+
+    tray_center_quat_w = tray.data.site_quat_w[
+        env_ids, site_id, :
+    ].clone()
+
+    # ---------------------------------------------------------
+    # CUBE POSITION
+    #
+    # tray_center is the reference point on the tray.
+    #
+    # The cube is placed one half-size above that point along
+    # the tray_center local +Z axis.
+    #
+    # This is important because the cube geometry is centered
+    # on its root body.
+    # ---------------------------------------------------------
+
+    offset_local = torch.tensor(
+        [0.1, cube_half_size + z_offset, 0.0],
+        device=env.device,
+        dtype=tray_center_pos_w.dtype,
+    ).unsqueeze(0).expand(
+        len(env_ids),
+        -1,
+    )
+
+    offset_world = quat_apply(
+        tray_center_quat_w,
+        offset_local,
+    )
+
+    cube_pos = tray_center_pos_w + offset_world
+
+    # Same orientation as tray_center.
+    cube_quat = tray_center_quat_w.clone()
+
+    cube_pose = torch.cat(
+        [cube_pos, cube_quat],
+        dim=-1,
+    )
+
+    if _DEBUG:
+        print(
+            "[reset_cube_on_tray]"
+        )
+        print(
+            f"    tray_center = {tray_center_pos_w}"
+        )
+        print(
+            f"    tray_center_quat = "
+            f"{tray_center_quat_w}"
+        )
+        print(
+            f"    cube_half_size = "
+            f"{cube_half_size}"
+        )
+        print(
+            f"    cube_pos = {cube_pos}"
+        )
+        print(
+            f"    cube_quat = {cube_quat}"
+        )
+
+    # ---------------------------------------------------------
+    # WRITE CUBE POSE
+    # ---------------------------------------------------------
+
+    cube.write_root_link_pose_to_sim(
+        cube_pose,
+        env_ids=env_ids,
+    )
+
+    cube.write_root_link_velocity_to_sim(
+        torch.zeros(
+            (len(env_ids), 6),
+            device=env.device,
+            dtype=cube_pose.dtype,
+        ),
+        env_ids=env_ids,
+    )
+
+    env.sim.forward()
+
+    if _DEBUG:
+        actual_cube_pose = cube.data.root_link_pose_w[
             env_ids
         ]
 
         print(
-            "[reset_tray_at_hands] "
-            "actual tray root_link_pose_w "
-            f"AFTER forward={actual_pose}"
+            "[reset_cube_on_tray] "
+            f"actual cube pose = {actual_cube_pose}"
         )
