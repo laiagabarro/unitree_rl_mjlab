@@ -8,8 +8,7 @@
   <asset>
 
     <!--
-      The actual color is randomized by cube_constants.py.
-      This is only the default/fallback color.
+      Fixed cube color.
     -->
     <material
       name="cube_mat"
@@ -34,8 +33,9 @@
         full size = 0.06 m
         mass = 0.15 kg
 
-        These values are randomized by cube_constants.py
-        when the cube MjSpec is created.
+        Size and mass are randomized at every
+        environment reset by the domain-randomization
+        events.
       -->
       <geom
         name="cube_geom"

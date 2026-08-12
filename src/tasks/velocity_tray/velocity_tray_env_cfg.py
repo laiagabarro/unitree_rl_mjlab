@@ -207,14 +207,38 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       },
     ),
     "reset_tray": EventTermCfg(
-      func=mdp.reset_tray_at_hands,
-      mode="reset",
-      params={
-        "robot_cfg": SceneEntityCfg("robot"),
-        "tray_name": "tray",
-        "site_names": ("left_palm", "right_palm"),
-        "z_offset": 0.02,
-      },
+        func=mdp.reset_tray_at_hands,
+        mode="reset",
+        params={
+            "robot_cfg": SceneEntityCfg("robot"),
+            "tray_name": "tray",
+            "site_names": ("right_palm",),
+            "z_offset": 0.02,
+        },
+    ),
+    "randomize_cubes_physics": EventTermCfg(
+        func=mdp.randomize_cubes_physics,
+        mode="reset",
+    ),
+    "reset_cubes": EventTermCfg(
+        func=mdp.reset_cubes_on_tray,
+        mode="reset",
+        params={
+            "tray_name": "tray",
+            "cube_names": (
+                "cube_0",
+                "cube_1",
+                "cube_2",
+                "cube_3",
+            ),
+            "z_offset": 0.04,
+            "num_cubes_min": 4,
+            "num_cubes_max": 4,
+            "x_center": 0.10,
+            "x_half_range": 0.07,
+            "z_half_range": 0.10,
+            "min_separation": 0.01,
+        },
     ),
     "push_robot": EventTermCfg(
       func=mdp.push_by_setting_velocity,
