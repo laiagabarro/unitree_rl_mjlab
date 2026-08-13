@@ -118,6 +118,10 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       func=mdp.debug_obs(mdp.foot_contact_forces,"foot_contact_forces"),
       params={"sensor_name": "feet_ground_contact"},
     ),
+    "cube_state": ObservationTermCfg(
+      func=mdp.debug_obs(mdp.cube_state_relative_to_tray, "cube_state"),
+      params={"tray_name": "tray", "cube_names": ("cube_0","cube_1","cube_2","cube_3")},
+      ),
   }
 
   observations = {
@@ -408,6 +412,16 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "height_threshold": 0.1,
       },
     ),
+    "tray_angular_velocity": RewardTermCfg(
+      func=mdp.tray_angular_velocity_penalty,
+      weight=0.0,  # Ramped up via curriculum, same trigger as tray_orientation.
+      params={"tray_name": "tray"},
+      ),
+    "tray_vertical_velocity": RewardTermCfg(
+      func=mdp.tray_vertical_velocity_penalty,
+      weight=0.0,  # Ramped up via curriculum, same trigger as tray_orientation.
+      params={"tray_name": "tray"},
+      ),
   }
 
   ##
@@ -441,6 +455,55 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         ],
       },
     ),
+    "tray_orientation_curriculum": CurriculumTermCfg(
+        func=mdp.reward_threshold_curriculum,
+        params={
+        "trigger_rewards": [
+            ("track_linear_velocity", 0.6),
+            ("track_angular_velocity", 0.5),
+        ],
+        "target_reward": "tray_orientation",
+        "target_weight": 1.0,
+        },
+    ),
+    "cube_upright_curriculum": CurriculumTermCfg(
+        func=mdp.reward_threshold_curriculum,
+        params={
+        "trigger_rewards": [("tray_orientation", 0.5)],
+        "target_reward": "cube_upright",
+        "target_weight": 0.5,
+        },
+    ),
+    "cube_inside_tray_curriculum": CurriculumTermCfg(
+        func=mdp.reward_threshold_curriculum,
+        params={
+        "trigger_rewards": [("tray_orientation", 0.5)],
+        "target_reward": "cube_inside_tray",
+        "target_weight": 1.0,
+        },
+    ),
+    "tray_ang_vel_curriculum": CurriculumTermCfg(
+        func=mdp.reward_threshold_curriculum,
+        params={
+            "trigger_rewards": [
+            ("track_linear_velocity", 0.6),
+            ("track_angular_velocity", 0.5),
+            ],
+            "target_reward": "tray_angular_velocity",
+            "target_weight": -0.05,
+        },
+        ),
+        "tray_lin_vel_curriculum": CurriculumTermCfg(
+        func=mdp.reward_threshold_curriculum,
+        params={
+            "trigger_rewards": [
+            ("track_linear_velocity", 0.6),
+            ("track_angular_velocity", 0.5),
+            ],
+            "target_reward": "tray_vertical_velocity",
+            "target_weight": -0.05,
+        },
+        ),
   }
 
   ##

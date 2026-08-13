@@ -108,52 +108,63 @@ def reward_weight(
   return torch.tensor([reward_term_cfg.weight])
 
 
-class reward_threshold_curriculum:
-  """Ramp a target reward's weight once another reward's episodic average
-  (smoothed with an EMA across resets) crosses a threshold.
+def reward_threshold_curriculum(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor | slice,
+  trigger_rewards: list[tuple[str, float]],
+  target_reward: str,
+  target_weight: float,
+  ema_alpha: float = 0.05,
+  state_key: str | None = None,
+) -> dict[str, float]:
+  """Ramp target_reward's weight once ALL trigger rewards' episodic averages
+  (each EMA-smoothed across resets) cross their thresholds.
+
+  Persistent EMA/triggered state is stashed on `env` (not on this function,
+  since mjlab calls it as a bare function, not an instance), keyed by
+  `state_key` (defaults to `target_reward`) so multiple calls of this same
+  function for different reward pairs don't clash.
 
   Note: reads env.reward_manager._episode_sums, a private mjlab attribute
   (pinned to mjlab==1.6.0). If mjlab is upgraded and this breaks, check
   RewardManager.reset() for the new equivalent.
   """
+  if not hasattr(env, "_reward_threshold_curriculum_state"):
+    env._reward_threshold_curriculum_state = {}
+  key = state_key or target_reward
+  state = env._reward_threshold_curriculum_state.setdefault(
+    key, {"emas": {}, "triggered": False}
+  )
 
-  def __init__(self, cfg: CurriculumTermCfg, env: ManagerBasedRlEnv):
-    del cfg, env  # Unused; state initialized lazily below.
-    self.ema: float | None = None
-    self.triggered = False
+  empty = isinstance(env_ids, torch.Tensor) and env_ids.numel() == 0
 
-  def __call__(
-    self,
-    env: ManagerBasedRlEnv,
-    env_ids: torch.Tensor | slice,
-    trigger_reward: str,
-    threshold: float,
-    target_reward: str,
-    target_weight: float,
-    ema_alpha: float = 0.05,
-  ) -> dict[str, float]:
-    episode_sums = env.reward_manager._episode_sums[trigger_reward]
-
-    if isinstance(env_ids, torch.Tensor) and env_ids.numel() == 0:
-      avg_reward_rate = self.ema if self.ema is not None else 0.0
+  result: dict[str, float] = {}
+  all_above = True
+  for reward_name, threshold in trigger_rewards:
+    if empty:
+      avg_reward_rate = state["emas"].get(reward_name, 0.0)
     else:
+      episode_sums = env.reward_manager._episode_sums[reward_name]
       avg_reward_rate = (
         torch.mean(episode_sums[env_ids]) / env.max_episode_length_s
       ).item()
 
-    self.ema = (
+    prev_ema = state["emas"].get(reward_name)
+    new_ema = (
       avg_reward_rate
-      if self.ema is None
-      else ema_alpha * avg_reward_rate + (1 - ema_alpha) * self.ema
+      if prev_ema is None
+      else ema_alpha * avg_reward_rate + (1 - ema_alpha) * prev_ema
     )
+    state["emas"][reward_name] = new_ema
+    result[f"ema/{reward_name}"] = new_ema
+    if new_ema <= threshold:
+      all_above = False
 
-    if not self.triggered and self.ema > threshold:
-      self.triggered = True
+  if not state["triggered"] and all_above:
+    state["triggered"] = True
 
-    if self.triggered:
-      env.reward_manager.get_term_cfg(target_reward).weight = target_weight
+  if state["triggered"]:
+    env.reward_manager.get_term_cfg(target_reward).weight = target_weight
 
-    return {"ema": self.ema, "triggered": float(self.triggered)}
-
-  def reset(self, env_ids=None) -> None:
-    del env_ids  # State is global across envs, not per-env; don't clear it.
+  result["triggered"] = float(state["triggered"])
+  return result

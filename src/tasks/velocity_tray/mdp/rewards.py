@@ -440,14 +440,31 @@ def tray_orientation(
 ) -> torch.Tensor:
   """Reward the tray staying horizontal (tray z-axis vs world z-axis)."""
   tray: Entity = env.scene[tray_name]
-  site_id = tray.find_sites(("tray_center",))[0][0]
-  tray_quat = tray.data.site_quat_w[:, site_id, :]
+  tray_quat = tray.data.root_link_quat_w
 
   z_tray_w = _up_axis_world(tray_quat)
   cos_theta = torch.clamp(z_tray_w[:, 2], -1.0, 1.0)
   theta = torch.acos(cos_theta)
   return torch.exp(-k * theta**2)
 
+def tray_angular_velocity_penalty(
+  env: ManagerBasedRlEnv,
+  tray_name: str = "tray",
+) -> torch.Tensor:
+  """Penalize tray roll/pitch angular velocity (gait-induced jerks that
+  destabilize objects on the tray, independent of average orientation)."""
+  tray: Entity = env.scene[tray_name]
+  ang_vel_xy = tray.data.root_link_ang_vel_w[:, :2]  # no penalitzem yaw
+  return torch.sum(torch.square(ang_vel_xy), dim=-1)
+
+
+def tray_vertical_velocity_penalty(
+  env: ManagerBasedRlEnv,
+  tray_name: str = "tray",
+) -> torch.Tensor:
+  """Penalize tray vertical velocity (bounce from foot impacts)."""
+  tray: Entity = env.scene[tray_name]
+  return torch.square(tray.data.root_link_lin_vel_w[:, 2])
 
 def cube_upright(
   env: ManagerBasedRlEnv,
@@ -457,8 +474,7 @@ def cube_upright(
 ) -> torch.Tensor:
   """Reward each cube's z-axis staying aligned with the tray's z-axis."""
   tray: Entity = env.scene[tray_name]
-  site_id = tray.find_sites(("tray_center",))[0][0]
-  z_tray_w = _up_axis_world(tray.data.site_quat_w[:, site_id, :])
+  z_tray_w = _up_axis_world(tray.data.root_link_quat_w)
 
   total = torch.zeros(env.num_envs, device=env.device)
   for cube_name in cube_names:

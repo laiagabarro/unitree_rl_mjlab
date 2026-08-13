@@ -53,6 +53,21 @@ def run_play(task_id: str, cfg: PlayConfig):
   env_cfg = load_env_cfg(task_id, play=True)
   agent_cfg = load_rl_cfg(task_id)
 
+  # --- DEBUG: manually re-enable tray/cube rewards to inspect them in the
+  # viewer, since play mode clears the curriculum and would otherwise leave
+  # them at weight=0 forever. Remove this before using the script for
+  # anything other than visual debugging.
+  
+  for name, w in [
+      ("tray_orientation", 1.0),
+      ("cube_upright", 0.5),
+      ("cube_inside_tray", 1.0),
+      ("tray_angular_velocity", -0.05),
+      ("tray_vertical_velocity", -0.05),
+  ]:
+      if name in env_cfg.rewards:
+          env_cfg.rewards[name].weight = w
+
   DUMMY_MODE = cfg.agent in {"zero", "random"}
   TRAINED_MODE = not DUMMY_MODE
 

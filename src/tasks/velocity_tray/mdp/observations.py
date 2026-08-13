@@ -7,6 +7,7 @@ import torch
 from mjlab.entity import Entity
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor import ContactSensor
+from mjlab.utils.lab_api.math import quat_apply, quat_inv
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
@@ -80,3 +81,29 @@ def phase(env: ManagerBasedRlEnv, period: float, command_name: str) -> torch.Ten
     phase = torch.where(stand_mask.unsqueeze(1), torch.zeros_like(phase), phase)
     return phase
 
+def cube_state_relative_to_tray(
+  env: ManagerBasedRlEnv,
+  tray_name: str = "tray",
+  cube_names: tuple[str, ...] = ("cube_0", "cube_1", "cube_2", "cube_3"),
+) -> torch.Tensor:
+  """Per-cube position relative to the tray frame, plus tilt cosine.
+  Privileged (critic-only) — not observable from robot proprioception."""
+  tray: Entity = env.scene[tray_name]
+  site_id = tray.find_sites(("tray_center",))[0][0]
+  tray_pos = tray.data.site_pos_w[:, site_id, :]
+  tray_quat_inv = quat_inv(tray.data.site_quat_w[:, site_id, :])
+  z_tray_w = tray.data.root_link_quat_w  # reutilitzem el fix ja aplicat
+
+  feats = []
+  for cube_name in cube_names:
+    cube: Entity = env.scene[cube_name]
+    rel_pos = quat_apply(tray_quat_inv, cube.data.root_link_pos_w - tray_pos)
+    z_cube_w = quat_apply(cube.data.root_link_quat_w, torch.tensor(
+      [0.0, 0.0, 1.0], device=env.device
+    ).expand(env.num_envs, 3))
+    z_tray_up = quat_apply(z_tray_w, torch.tensor(
+      [0.0, 0.0, 1.0], device=env.device
+    ).expand(env.num_envs, 3))
+    cos_theta = torch.sum(z_cube_w * z_tray_up, dim=-1, keepdim=True)
+    feats.append(torch.cat([rel_pos, cos_theta], dim=-1))  # (N, 4) per cub
+  return torch.cat(feats, dim=-1)  # (N, 16)
