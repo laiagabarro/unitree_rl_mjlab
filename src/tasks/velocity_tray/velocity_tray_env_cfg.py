@@ -394,15 +394,15 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       weight=0.0,  # Ramped up via curriculum.
       params={"tray_name": "tray", "k": 20.0},
     ),
-    "cube_upright": RewardTermCfg(
-      func=mdp.cube_upright,
-      weight=0.0,  # Ramped up via curriculum.
-      params={
-        "tray_name": "tray",
-        "cube_names": ("cube_0", "cube_1", "cube_2", "cube_3"),
-        "k": 8.0,
-      },
-    ),
+    # "cube_upright": RewardTermCfg(
+    #   func=mdp.cube_upright,
+    #   weight=0.0,  # Ramped up via curriculum.
+    #   params={
+    #     "tray_name": "tray",
+    #     "cube_names": ("cube_0", "cube_1", "cube_2", "cube_3"),
+    #     "k": 8.0,
+    #   },
+    # ),
     "cube_inside_tray": RewardTermCfg(
       func=mdp.cube_inside_tray,
       weight=0.0,  # Ramped up via curriculum.
@@ -416,12 +416,22 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       func=mdp.tray_angular_velocity_penalty,
       weight=0.0,  # Ramped up via curriculum, same trigger as tray_orientation.
       params={"tray_name": "tray"},
-      ),
+    ),
     "tray_vertical_velocity": RewardTermCfg(
       func=mdp.tray_vertical_velocity_penalty,
       weight=0.0,  # Ramped up via curriculum, same trigger as tray_orientation.
       params={"tray_name": "tray"},
-      ),
+    ),
+    "cube_linear_velocity": RewardTermCfg(
+      func=mdp.cube_linear_velocity_penalty,
+      weight=0.0,  # Ramped up via curriculum.
+      params={"tray_name": "tray", "cube_names": ("cube_0","cube_1","cube_2","cube_3")},
+    ),
+    "cube_angular_velocity": RewardTermCfg(
+      func=mdp.cube_angular_velocity_penalty,
+      weight=0.0,  # Ramped up via curriculum.
+      params={"tray_name": "tray", "cube_names": ("cube_0","cube_1","cube_2","cube_3")},
+    ),
   }
 
   ##
@@ -466,18 +476,34 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "target_weight": 1.0,
         },
     ),
-    "cube_upright_curriculum": CurriculumTermCfg(
+    # "cube_upright_curriculum": CurriculumTermCfg(
+    #     func=mdp.reward_threshold_curriculum,
+    #     params={
+    #     "trigger_rewards": [("tray_orientation", 0.8)],
+    #     "target_reward": "cube_upright",
+    #     "target_weight": 0.5,
+    #     },
+    # ),
+    "cube_lin_vel_curriculum": CurriculumTermCfg(
         func=mdp.reward_threshold_curriculum,
         params={
-        "trigger_rewards": [("tray_orientation", 0.5)],
-        "target_reward": "cube_upright",
-        "target_weight": 0.5,
+            "trigger_rewards": [("tray_orientation", 0.8)],
+            "target_reward": "cube_linear_velocity",
+            "target_weight": -0.02,
+        },
+    ),
+        "cube_ang_vel_curriculum": CurriculumTermCfg(
+        func=mdp.reward_threshold_curriculum,
+        params={
+            "trigger_rewards": [("tray_orientation", 0.8)],
+            "target_reward": "cube_angular_velocity",
+            "target_weight": -0.02,
         },
     ),
     "cube_inside_tray_curriculum": CurriculumTermCfg(
         func=mdp.reward_threshold_curriculum,
         params={
-        "trigger_rewards": [("tray_orientation", 0.5)],
+        "trigger_rewards": [("tray_orientation", 0.8)],
         "target_reward": "cube_inside_tray",
         "target_weight": 1.0,
         },
@@ -490,7 +516,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
             ("track_angular_velocity", 0.5),
             ],
             "target_reward": "tray_angular_velocity",
-            "target_weight": -0.05,
+            "target_weight": -0.15,
         },
         ),
         "tray_lin_vel_curriculum": CurriculumTermCfg(
@@ -501,7 +527,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
             ("track_angular_velocity", 0.5),
             ],
             "target_reward": "tray_vertical_velocity",
-            "target_weight": -0.05,
+            "target_weight": -0.15,
         },
         ),
   }

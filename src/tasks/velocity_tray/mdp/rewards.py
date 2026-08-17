@@ -466,25 +466,59 @@ def tray_vertical_velocity_penalty(
   tray: Entity = env.scene[tray_name]
   return torch.square(tray.data.root_link_lin_vel_w[:, 2])
 
-def cube_upright(
+# def cube_upright(
+#   env: ManagerBasedRlEnv,
+#   tray_name: str = "tray",
+#   cube_names: tuple[str, ...] = ("cube_0", "cube_1", "cube_2", "cube_3"),
+#   k: float = 8.0,
+# ) -> torch.Tensor:
+#   """Reward each cube's z-axis staying aligned with the tray's z-axis."""
+#   tray: Entity = env.scene[tray_name]
+#   z_tray_w = _up_axis_world(tray.data.root_link_quat_w)
+
+#   total = torch.zeros(env.num_envs, device=env.device)
+#   for cube_name in cube_names:
+#     cube: Entity = env.scene[cube_name]
+#     z_cube_w = _up_axis_world(cube.data.root_link_quat_w)
+#     cos_theta = torch.clamp(torch.sum(z_cube_w * z_tray_w, dim=-1), -1.0, 1.0)
+#     theta = torch.acos(cos_theta)
+#     total += torch.exp(-k * theta**2)
+#   return total / len(cube_names)
+
+def _cube_on_tray_mask(
+  cube: Entity,
+  tray_pos: torch.Tensor,
+  tray_quat_inv: torch.Tensor,
+  height_threshold: float,
+  env: ManagerBasedRlEnv,
+) -> torch.Tensor:
+  """Boolean mask: True where this cube is still resting on the tray."""
+  half_size = env.sim.model.geom_size[:, cube.indexing.geom_ids[0], 0]
+  local = quat_apply(tray_quat_inv, cube.data.root_link_pos_w - tray_pos)
+  height_local = local[:, 1]  # tray-local "up" axis
+  delta_h_error = torch.abs(height_local - half_size)
+  return delta_h_error < height_threshold
+
+def cube_inside_tray(
   env: ManagerBasedRlEnv,
   tray_name: str = "tray",
   cube_names: tuple[str, ...] = ("cube_0", "cube_1", "cube_2", "cube_3"),
-  k: float = 8.0,
+  height_threshold: float = 0.1,
 ) -> torch.Tensor:
-  """Reward each cube's z-axis staying aligned with the tray's z-axis."""
+  """Binary reward: 1 if a cube's height above the tray (tray-local frame)
+  stays close to its resting height (touching the surface), 0 if it has
+  fallen off."""
   tray: Entity = env.scene[tray_name]
-  z_tray_w = _up_axis_world(tray.data.root_link_quat_w)
+  site_id = tray.find_sites(("tray_center",))[0][0]
+  tray_pos = tray.data.site_pos_w[:, site_id, :]
+  tray_quat_inv = quat_inv(tray.data.site_quat_w[:, site_id, :])
 
   total = torch.zeros(env.num_envs, device=env.device)
   for cube_name in cube_names:
     cube: Entity = env.scene[cube_name]
-    z_cube_w = _up_axis_world(cube.data.root_link_quat_w)
-    cos_theta = torch.clamp(torch.sum(z_cube_w * z_tray_w, dim=-1), -1.0, 1.0)
-    theta = torch.acos(cos_theta)
-    total += torch.exp(-k * theta**2)
+    on_tray = _cube_on_tray_mask(cube, tray_pos, tray_quat_inv, height_threshold, env)
+    total += on_tray.float()
   return total / len(cube_names)
-
 
 def cube_inside_tray(
   env: ManagerBasedRlEnv,
@@ -509,3 +543,50 @@ def cube_inside_tray(
     delta_h_error = torch.abs(height_local - half_size)
     total += (delta_h_error < height_threshold).float()
   return total / len(cube_names)
+
+def cube_linear_velocity_penalty(
+  env: ManagerBasedRlEnv,
+  tray_name: str = "tray",
+  cube_names: tuple[str, ...] = ("cube_0", "cube_1", "cube_2", "cube_3"),
+  height_threshold: float = 0.1,
+) -> torch.Tensor:
+  """Penalize each cube's linear velocity relative to the tray (sliding).
+  A cube that has already fallen off is excluded — its velocity shouldn't
+  keep contributing once it's no longer our problem to solve."""
+  tray: Entity = env.scene[tray_name]
+  site_id = tray.find_sites(("tray_center",))[0][0]
+  tray_pos = tray.data.site_pos_w[:, site_id, :]
+  tray_quat_inv = quat_inv(tray.data.site_quat_w[:, site_id, :])
+  tray_vel = tray.data.root_link_lin_vel_w
+
+  total = torch.zeros(env.num_envs, device=env.device)
+  for cube_name in cube_names:
+    cube: Entity = env.scene[cube_name]
+    on_tray = _cube_on_tray_mask(cube, tray_pos, tray_quat_inv, height_threshold, env)
+    rel_vel = cube.data.root_link_lin_vel_w - tray_vel
+    total += torch.sum(torch.square(rel_vel), dim=-1) * on_tray.float()
+  return total / len(cube_names)
+
+
+def cube_angular_velocity_penalty(
+  env: ManagerBasedRlEnv,
+  tray_name: str = "tray",
+  cube_names: tuple[str, ...] = ("cube_0", "cube_1", "cube_2", "cube_3"),
+  height_threshold: float = 0.1,
+) -> torch.Tensor:
+  """Penalize each cube's angular velocity relative to the tray (spinning/
+  tumbling). Same fallen-cube exclusion as cube_linear_velocity_penalty."""
+  tray: Entity = env.scene[tray_name]
+  site_id = tray.find_sites(("tray_center",))[0][0]
+  tray_pos = tray.data.site_pos_w[:, site_id, :]
+  tray_quat_inv = quat_inv(tray.data.site_quat_w[:, site_id, :])
+  tray_ang_vel = tray.data.root_link_ang_vel_w
+
+  total = torch.zeros(env.num_envs, device=env.device)
+  for cube_name in cube_names:
+    cube: Entity = env.scene[cube_name]
+    on_tray = _cube_on_tray_mask(cube, tray_pos, tray_quat_inv, height_threshold, env)
+    rel_ang_vel = cube.data.root_link_ang_vel_w - tray_ang_vel
+    total += torch.sum(torch.square(rel_ang_vel), dim=-1) * on_tray.float()
+  return total / len(cube_names)
+

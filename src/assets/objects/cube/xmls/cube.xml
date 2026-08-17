@@ -27,11 +27,11 @@
       <freejoint/>
 
       <!--
-        Default cube:
+        Default cube (simplified box, standing in for a cup):
 
-        half-size = 0.03 m
-        full size = 0.06 m
-        mass = 0.15 kg
+        half-size = 0.035 m
+        full size = 0.07 m
+        mass = 0.30 kg
 
         Size and mass are randomized at every
         environment reset by the domain-randomization
@@ -40,9 +40,10 @@
       <geom
         name="cube_geom"
         type="box"
-        size="0.03 0.03 0.03"
+        size="0.035 0.035 0.035"
         material="cube_mat"
-        mass="0.15"
+        mass="0.30"
+        friction="0.4 0.01 0.0001"
         contype="1"
         conaffinity="1"
       />

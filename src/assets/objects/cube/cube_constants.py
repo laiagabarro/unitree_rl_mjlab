@@ -1,6 +1,4 @@
-"""Cube asset configuration.
-
-The cube is created from a fixed MuJoCo specification.
+"""CUBE asset configuration (simplified as a box for now).
 
 Its physical properties are randomized at every environment reset
 through the domain-randomization events in the task:
@@ -37,36 +35,36 @@ assert CUBE_XML.exists()
 
 # MuJoCo box `size` uses half-extents.
 #
-# 0.02 -> 4 cm full cube
-# 0.03 -> 6 cm full cube
-# 0.04 -> 8 cm full cube
+# 0.025 -> 5 cm full CUBE
+# 0.035 -> 7 cm full CUBE (default)
+# 0.045 -> 9 cm full CUBE
 
-CUBE_HALF_SIZE_MIN: float = 0.02
-CUBE_HALF_SIZE_MAX: float = 0.04
+CUBE_HALF_SIZE_MIN: float = 0.025
+CUBE_HALF_SIZE_MAX: float = 0.045
 
 
 # Mass:
 #
-# 0.05 -> 50 g
-# 0.15 -> 150 g (default)
-# 0.30 -> 300 g
+# 0.15 -> 150 g (empty mug)
+# 0.30 -> 300 g (default)
+# 0.40 -> 400 g (full mug)
 
-CUBE_MASS_MIN: float = 0.05
-CUBE_MASS_MAX: float = 0.30
+CUBE_MASS_MIN: float = 0.15
+CUBE_MASS_MAX: float = 0.40
 
 
-# Default mass defined in cube.xml.
-CUBE_DEFAULT_MASS: float = 0.15
+# Default mass defined in CUBE.xml.
+CUBE_DEFAULT_MASS: float = 0.30
 
 
 def get_spec() -> mujoco.MjSpec:
-    """Load the fixed MuJoCo cube specification."""
+    """Load the fixed MuJoCo CUBE specification."""
 
     return mujoco.MjSpec.from_file(str(CUBE_XML))
 
 
 def get_cube_cfg() -> EntityCfg:
-    """Return the cube entity configuration."""
+    """Return the CUBE entity configuration."""
 
     return EntityCfg(
         init_state=EntityCfg.InitialStateCfg(
