@@ -57,13 +57,16 @@ def run_play(task_id: str, cfg: PlayConfig):
   # viewer, since play mode clears the curriculum and would otherwise leave
   # them at weight=0 forever. Remove this before using the script for
   # anything other than visual debugging.
-  
+
   for name, w in [
       ("tray_orientation", 1.0),
-      ("cube_upright", 0.5),
       ("cube_inside_tray", 1.0),
-      ("tray_angular_velocity", -0.05),
-      ("tray_vertical_velocity", -0.05),
+      ("tray_angular_velocity", -0.15),
+      ("tray_vertical_velocity", -0.15),
+      ("cube_linear_velocity", -0.02),
+      ("cube_angular_velocity", -0.02),
+      ("action_rate_l2", -0.1),
+      ("action_acc_l2", -0.005),
   ]:
       if name in env_cfg.rewards:
           env_cfg.rewards[name].weight = w

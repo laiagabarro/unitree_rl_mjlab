@@ -235,7 +235,10 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
                 "cube_2",
                 "cube_3",
             ),
-            "z_offset": 0.04,
+            # The tray mesh top is about 0.0175 m above its local origin.
+            # Keep the cube bottoms just above it instead of spawning them
+            # slightly inside the mesh.
+            "z_offset": 0.05,
             "num_cubes_min": 4,
             "num_cubes_max": 4,
             "x_center": 0.10,
@@ -335,10 +338,14 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       weight=-0.025,  # Override per-robot
       params={"sensor_name": "robot/root_angmom"},
     ),
-    "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-200.0),
+    "is_terminated": RewardTermCfg(
+      func=mdp.is_terminated_without_cube_fall,
+      weight=-200.0,
+    ),
     "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=-2.5e-7),
     "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-10.0),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.05),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1),
+    "action_acc_l2": RewardTermCfg(func=mdp.action_acc_l2, weight=-0.005),
     "foot_gait": RewardTermCfg(
       func=mdp.feet_gait,
       weight=0.5,
@@ -443,6 +450,15 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     "fell_over": TerminationTermCfg(
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(70.0)},
+    ),
+    "cube_fallen": TerminationTermCfg(
+      func=mdp.cube_fallen,
+      params={
+        "tray_name": "tray",
+        "cube_names": ("cube_0", "cube_1", "cube_2", "cube_3"),
+        "height_threshold": 0.1,
+        "activation_reward": "cube_inside_tray",
+      },
     ),
   }
 

@@ -557,13 +557,16 @@ def cube_linear_velocity_penalty(
   site_id = tray.find_sites(("tray_center",))[0][0]
   tray_pos = tray.data.site_pos_w[:, site_id, :]
   tray_quat_inv = quat_inv(tray.data.site_quat_w[:, site_id, :])
-  tray_vel = tray.data.root_link_lin_vel_w
+  # Use the velocity of the tray center itself.  Subtracting only the tray
+  # root velocity misses the tangential velocity (omega x r) introduced by
+  # tray roll/pitch at the cube's position.
+  tray_center_vel = tray.data.site_lin_vel_w[:, site_id, :]
 
   total = torch.zeros(env.num_envs, device=env.device)
   for cube_name in cube_names:
     cube: Entity = env.scene[cube_name]
     on_tray = _cube_on_tray_mask(cube, tray_pos, tray_quat_inv, height_threshold, env)
-    rel_vel = cube.data.root_link_lin_vel_w - tray_vel
+    rel_vel = cube.data.root_link_lin_vel_w - tray_center_vel
     total += torch.sum(torch.square(rel_vel), dim=-1) * on_tray.float()
   return total / len(cube_names)
 
@@ -589,4 +592,3 @@ def cube_angular_velocity_penalty(
     rel_ang_vel = cube.data.root_link_ang_vel_w - tray_ang_vel
     total += torch.sum(torch.square(rel_ang_vel), dim=-1) * on_tray.float()
   return total / len(cube_names)
-

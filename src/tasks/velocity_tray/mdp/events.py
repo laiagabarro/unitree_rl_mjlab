@@ -343,7 +343,11 @@ def reset_cubes_on_tray(
             * z_half_range
         )
 
-        for _ in range(30):
+        # Rejection sampling normally finds a valid placement quickly.  Keep
+        # trying for longer, but also provide a deterministic fallback below:
+        # accepting the last invalid sample causes overlapping cubes that can
+        # appear fused in MuJoCo.
+        for _ in range(100):
             valid = active.clone()
 
             if cube_idx > 0:
@@ -419,6 +423,27 @@ def reset_cubes_on_tray(
                 new_z,
                 candidate_z,
             )
+
+        # Four separated fallback slots.  The spacing (0.11 m) is larger than
+        # the maximum possible cube diameter plus min_separation (0.10 m), so
+        # this remains valid even for the largest randomized cubes.
+        fallback_x_offsets = (
+            -0.055,
+            0.055,
+            -0.055,
+            0.055,
+        )
+        fallback_z_offsets = (
+            -0.055,
+            -0.055,
+            0.055,
+            0.055,
+        )
+        fallback_x = torch.full_like(candidate_x, x_center + fallback_x_offsets[cube_idx])
+        fallback_z = torch.full_like(candidate_z, fallback_z_offsets[cube_idx])
+        fallback_mask = active & ~valid
+        candidate_x = torch.where(fallback_mask, fallback_x, candidate_x)
+        candidate_z = torch.where(fallback_mask, fallback_z, candidate_z)
 
         placed_positions[:, cube_idx, 0] = candidate_x
         placed_positions[:, cube_idx, 1] = candidate_z
