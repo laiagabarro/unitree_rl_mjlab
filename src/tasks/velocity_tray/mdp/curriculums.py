@@ -174,12 +174,37 @@ def reward_threshold_curriculum(
       progress = min(max(elapsed_steps / ramp_steps, 0.0), 1.0)
     else:
       progress = 1.0
+
     env.reward_manager.get_term_cfg(target_reward).weight = target_weight * progress
+
+    # Store the curriculum progress so other components, such as
+    # cube_fallen, can use the exact same progress value.
+    state["progress"] = progress
+
     result["progress"] = progress
     result["weight"] = target_weight * progress
   else:
+    state["progress"] = 0.0
     result["progress"] = 0.0
     result["weight"] = 0.0
 
   result["triggered"] = float(state["triggered"])
   return result
+
+
+def get_curriculum_progress(
+  env: ManagerBasedRlEnv,
+  state_key: str,
+) -> float:
+  """Return the current progress of a reward threshold curriculum."""
+
+  state = getattr(
+    env,
+    "_reward_threshold_curriculum_state",
+    {},
+  ).get(state_key)
+
+  if state is None:
+    return 0.0
+
+  return state.get("progress", 0.0)
