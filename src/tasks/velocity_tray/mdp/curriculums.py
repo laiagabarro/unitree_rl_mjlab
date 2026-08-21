@@ -115,10 +115,14 @@ def reward_threshold_curriculum(
   target_reward: str,
   target_weight: float,
   ema_alpha: float = 0.05,
+  ramp_steps: int = 0,
   state_key: str | None = None,
 ) -> dict[str, float]:
-  """Ramp target_reward's weight once ALL trigger rewards' episodic averages
-  (each EMA-smoothed across resets) cross their thresholds.
+  """Enable or linearly ramp a reward once all trigger rewards cross thresholds.
+
+  When ``ramp_steps`` is positive, the term's weight goes from zero to
+  ``target_weight`` over that many environment control steps after the
+  threshold is first crossed. Otherwise it is enabled immediately.
 
   Persistent EMA/triggered state is stashed on `env` (not on this function,
   since mjlab calls it as a bare function, not an instance), keyed by
@@ -133,7 +137,7 @@ def reward_threshold_curriculum(
     env._reward_threshold_curriculum_state = {}
   key = state_key or target_reward
   state = env._reward_threshold_curriculum_state.setdefault(
-    key, {"emas": {}, "triggered": False}
+    key, {"emas": {}, "triggered": False, "trigger_step": None}
   )
 
   empty = isinstance(env_ids, torch.Tensor) and env_ids.numel() == 0
@@ -162,9 +166,20 @@ def reward_threshold_curriculum(
 
   if not state["triggered"] and all_above:
     state["triggered"] = True
+    state["trigger_step"] = env.common_step_counter
 
   if state["triggered"]:
-    env.reward_manager.get_term_cfg(target_reward).weight = target_weight
+    if ramp_steps > 0:
+      elapsed_steps = env.common_step_counter - state["trigger_step"]
+      progress = min(max(elapsed_steps / ramp_steps, 0.0), 1.0)
+    else:
+      progress = 1.0
+    env.reward_manager.get_term_cfg(target_reward).weight = target_weight * progress
+    result["progress"] = progress
+    result["weight"] = target_weight * progress
+  else:
+    result["progress"] = 0.0
+    result["weight"] = 0.0
 
   result["triggered"] = float(state["triggered"])
   return result

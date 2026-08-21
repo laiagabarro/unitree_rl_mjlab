@@ -480,7 +480,10 @@ def unitree_g1_23dof_arms_up_env_cfg(
     cfg.scene.entities = {
         "robot": robot_cfg,
         "tray": get_tray_cfg(),
-        "cube": get_cube_cfg(),
+        "cube_0": get_cube_cfg(),
+        "cube_1": get_cube_cfg(),
+        "cube_2": get_cube_cfg(),
+        "cube_3": get_cube_cfg(),
     }
 
     # Tighten arm pose reward stds.

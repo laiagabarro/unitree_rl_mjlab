@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from mjlab.envs.mdp import dr
+from mjlab.managers.event_manager import requires_model_fields
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.utils.lab_api.math import quat_apply, quat_inv, quat_mul
 
@@ -165,6 +166,7 @@ def reset_tray_at_hands(
         print(f"    quat = {actual_center_quat - palm_quat}")
 
 
+@requires_model_fields("geom_size", "geom_rbound", "geom_aabb")
 def randomize_cubes_physics(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor | None,

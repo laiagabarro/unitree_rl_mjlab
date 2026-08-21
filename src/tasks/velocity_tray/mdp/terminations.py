@@ -33,14 +33,15 @@ def cube_fallen(
   cube_names: tuple[str, ...] = ("cube_0", "cube_1", "cube_2", "cube_3"),
   height_threshold: float = 0.1,
   activation_reward: str = "cube_inside_tray",
+  activation_weight: float = 1.0,
 ) -> torch.Tensor:
-  """Terminate once any cube has fallen, after the cube curriculum is active.
+  """Terminate once any cube has fallen, after the cube curriculum is complete.
 
-  The cube curriculum sets ``activation_reward`` to a non-zero weight only
-  after tray orientation has crossed its EMA-smoothed threshold.  Until then,
-  this term stays disabled so that early walking training keeps full episodes.
+  This stays disabled until the cube curriculum has reached
+  ``activation_weight`` so that early walking and the reward ramp keep full
+  episodes.
   """
-  if env.reward_manager.get_term_cfg(activation_reward).weight == 0.0:
+  if env.reward_manager.get_term_cfg(activation_reward).weight < activation_weight:
     return torch.zeros(env.num_envs, device=env.device, dtype=torch.bool)
 
   tray: Entity = env.scene[tray_name]

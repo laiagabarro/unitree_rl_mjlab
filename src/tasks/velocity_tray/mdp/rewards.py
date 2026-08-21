@@ -462,9 +462,10 @@ def tray_vertical_velocity_penalty(
   env: ManagerBasedRlEnv,
   tray_name: str = "tray",
 ) -> torch.Tensor:
-  """Penalize tray vertical velocity (bounce from foot impacts)."""
+  """Penalize vertical velocity at the tray center (bounce from impacts)."""
   tray: Entity = env.scene[tray_name]
-  return torch.square(tray.data.root_link_lin_vel_w[:, 2])
+  site_id = tray.find_sites(("tray_center",))[0][0]
+  return torch.square(tray.data.site_lin_vel_w[:, site_id, 2])
 
 # def cube_upright(
 #   env: ManagerBasedRlEnv,
@@ -490,41 +491,25 @@ def _cube_on_tray_mask(
   tray_pos: torch.Tensor,
   tray_quat_inv: torch.Tensor,
   height_threshold: float,
+  horizontal_limits: tuple[float, float],
   env: ManagerBasedRlEnv,
 ) -> torch.Tensor:
-  """Boolean mask: True where this cube is still resting on the tray."""
+  """Boolean mask: True where this cube is resting inside the tray bounds."""
   half_size = env.sim.model.geom_size[:, cube.indexing.geom_ids[0], 0]
   local = quat_apply(tray_quat_inv, cube.data.root_link_pos_w - tray_pos)
   height_local = local[:, 1]  # tray-local "up" axis
   delta_h_error = torch.abs(height_local - half_size)
-  return delta_h_error < height_threshold
+  x_limit, z_limit = horizontal_limits
+  inside_x = torch.abs(local[:, 0]) < x_limit - half_size
+  inside_z = torch.abs(local[:, 2]) < z_limit - half_size
+  return (delta_h_error < height_threshold) & inside_x & inside_z
 
 def cube_inside_tray(
   env: ManagerBasedRlEnv,
   tray_name: str = "tray",
   cube_names: tuple[str, ...] = ("cube_0", "cube_1", "cube_2", "cube_3"),
   height_threshold: float = 0.1,
-) -> torch.Tensor:
-  """Binary reward: 1 if a cube's height above the tray (tray-local frame)
-  stays close to its resting height (touching the surface), 0 if it has
-  fallen off."""
-  tray: Entity = env.scene[tray_name]
-  site_id = tray.find_sites(("tray_center",))[0][0]
-  tray_pos = tray.data.site_pos_w[:, site_id, :]
-  tray_quat_inv = quat_inv(tray.data.site_quat_w[:, site_id, :])
-
-  total = torch.zeros(env.num_envs, device=env.device)
-  for cube_name in cube_names:
-    cube: Entity = env.scene[cube_name]
-    on_tray = _cube_on_tray_mask(cube, tray_pos, tray_quat_inv, height_threshold, env)
-    total += on_tray.float()
-  return total / len(cube_names)
-
-def cube_inside_tray(
-  env: ManagerBasedRlEnv,
-  tray_name: str = "tray",
-  cube_names: tuple[str, ...] = ("cube_0", "cube_1", "cube_2", "cube_3"),
-  height_threshold: float = 0.1,
+  horizontal_limits: tuple[float, float] = (0.20, 0.14),
 ) -> torch.Tensor:
   """Binary reward: 1 if a cube's height above the tray (tray-local frame)
   stays close to its resting height (touching the surface), 0 if it has
@@ -541,7 +526,43 @@ def cube_inside_tray(
     local = quat_apply(tray_quat_inv, cube.data.root_link_pos_w - tray_pos)
     height_local = local[:, 1]  # tray-local "up" axis
     delta_h_error = torch.abs(height_local - half_size)
-    total += (delta_h_error < height_threshold).float()
+    x_limit, z_limit = horizontal_limits
+    inside_x = torch.abs(local[:, 0]) < x_limit - half_size
+    inside_z = torch.abs(local[:, 2]) < z_limit - half_size
+    total += (
+      (delta_h_error < height_threshold) & inside_x & inside_z
+    ).float()
+  return total / len(cube_names)
+
+
+def cube_position_on_tray(
+  env: ManagerBasedRlEnv,
+  tray_name: str = "tray",
+  cube_names: tuple[str, ...] = ("cube_0", "cube_1", "cube_2", "cube_3"),
+  horizontal_limits: tuple[float, float] = (0.20, 0.14),
+  sharpness: float = 4.0,
+) -> torch.Tensor:
+  """Reward cubes for keeping a margin from the tray edges."""
+  tray: Entity = env.scene[tray_name]
+  site_id = tray.find_sites(("tray_center",))[0][0]
+  tray_pos = tray.data.site_pos_w[:, site_id, :]
+  tray_quat_inv = quat_inv(tray.data.site_quat_w[:, site_id, :])
+  x_limit, z_limit = horizontal_limits
+
+  total = torch.zeros(env.num_envs, device=env.device)
+  for cube_name in cube_names:
+    cube: Entity = env.scene[cube_name]
+    half_size = env.sim.model.geom_size[:, cube.indexing.geom_ids[0], 0]
+    local = quat_apply(
+      tray_quat_inv,
+      cube.data.root_link_pos_w - tray_pos,
+    )
+    margin_x = (x_limit - half_size - torch.abs(local[:, 0])) / x_limit
+    margin_z = (z_limit - half_size - torch.abs(local[:, 2])) / z_limit
+    edge_margin = torch.minimum(margin_x, margin_z)
+    total += 1.0 - torch.exp(
+      -sharpness * torch.square(torch.clamp(edge_margin, min=0.0))
+    )
   return total / len(cube_names)
 
 def cube_linear_velocity_penalty(
@@ -557,16 +578,28 @@ def cube_linear_velocity_penalty(
   site_id = tray.find_sites(("tray_center",))[0][0]
   tray_pos = tray.data.site_pos_w[:, site_id, :]
   tray_quat_inv = quat_inv(tray.data.site_quat_w[:, site_id, :])
-  # Use the velocity of the tray center itself.  Subtracting only the tray
-  # root velocity misses the tangential velocity (omega x r) introduced by
-  # tray roll/pitch at the cube's position.
+  # A point rigidly attached to the tray has velocity v + omega x r.  The
+  # center velocity alone would incorrectly mark a stationary cube as
+  # sliding whenever the tray rotates and the cube is away from its center.
   tray_center_vel = tray.data.site_lin_vel_w[:, site_id, :]
+  tray_ang_vel = tray.data.root_link_ang_vel_w
 
   total = torch.zeros(env.num_envs, device=env.device)
   for cube_name in cube_names:
     cube: Entity = env.scene[cube_name]
-    on_tray = _cube_on_tray_mask(cube, tray_pos, tray_quat_inv, height_threshold, env)
-    rel_vel = cube.data.root_link_lin_vel_w - tray_center_vel
+    on_tray = _cube_on_tray_mask(
+      cube,
+      tray_pos,
+      tray_quat_inv,
+      height_threshold,
+      (0.20, 0.14),
+      env,
+    )
+    cube_offset = cube.data.root_link_pos_w - tray_pos
+    tray_vel_at_cube = tray_center_vel + torch.cross(
+      tray_ang_vel, cube_offset, dim=-1
+    )
+    rel_vel = cube.data.root_link_lin_vel_w - tray_vel_at_cube
     total += torch.sum(torch.square(rel_vel), dim=-1) * on_tray.float()
   return total / len(cube_names)
 
@@ -588,7 +621,14 @@ def cube_angular_velocity_penalty(
   total = torch.zeros(env.num_envs, device=env.device)
   for cube_name in cube_names:
     cube: Entity = env.scene[cube_name]
-    on_tray = _cube_on_tray_mask(cube, tray_pos, tray_quat_inv, height_threshold, env)
+    on_tray = _cube_on_tray_mask(
+      cube,
+      tray_pos,
+      tray_quat_inv,
+      height_threshold,
+      (0.20, 0.14),
+      env,
+    )
     rel_ang_vel = cube.data.root_link_ang_vel_w - tray_ang_vel
     total += torch.sum(torch.square(rel_ang_vel), dim=-1) * on_tray.float()
   return total / len(cube_names)
