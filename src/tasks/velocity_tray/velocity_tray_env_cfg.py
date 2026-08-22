@@ -427,6 +427,14 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "height_threshold": 0.1,
       },
     ),
+    "cube_position_on_tray": RewardTermCfg(
+      func=mdp.cube_position_on_tray,
+      weight=0.0,  # Ramped up via curriculum.
+      params={
+        "tray_name": "tray",
+        "cube_names": ("cube_0", "cube_1", "cube_2", "cube_3"),
+      },
+    ),
     "tray_angular_velocity": RewardTermCfg(
       func=mdp.tray_angular_velocity_penalty,
       weight=0.0,  # Ramped up via curriculum, same trigger as tray_orientation.
@@ -465,6 +473,9 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "tray_name": "tray",
         "cube_names": ("cube_0", "cube_1", "cube_2", "cube_3"),
         "height_threshold": 0.1,
+        # Ramps in together with cube_inside_tray_curriculum's progress
+        # (same state_key as its target_reward), instead of switching on
+        # for every env in the same step once the reward weight hits 1.0.
         "activation_state_key": "cube_inside_tray",
       },
     ),
@@ -534,6 +545,15 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "target_weight": 1.0,
         "ramp_steps": 5000,
         },
+    ),
+    "cube_position_curriculum": CurriculumTermCfg(
+      func=mdp.reward_threshold_curriculum,
+      params={
+        "trigger_rewards": [("tray_orientation", 0.8)],
+        "target_reward": "cube_position_on_tray",
+        "target_weight": 0.25,
+        "ramp_steps": 5000,
+      },
     ),
     "tray_ang_vel_curriculum": CurriculumTermCfg(
         func=mdp.reward_threshold_curriculum,
